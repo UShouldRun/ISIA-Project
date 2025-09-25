@@ -1,0 +1,13 @@
+version: '3.7'
+services:
+  spade_server:
+    image: ${IMAGE_NAME} 
+    container_name: ${CONTAINER_NAME}
+    env_file:
+      - ./.env
+    environment:
+      - SPADE_ADMIN_PORT
+    ports:
+      - "${SPADE_ADMIN_PORT}:${SPADE_ADMIN_PORT}"
+    volumes:
+      - ./src:/app/src
