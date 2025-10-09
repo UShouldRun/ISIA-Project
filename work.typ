@@ -21,3 +21,24 @@
 - *Mechanic*:
   - *Liveness*: assures drone, rover and other mechanic agents are working properly,
     as well as fix them
+
+== Communication Protocols
+
+== Planetary environment
+
+- *Challenges*:
+  - storms (dust storms, rain storms)
+  - terrain obstacles
+  - equipment malfunctions
+  - dynamic environment agents (hostile or friendly)???
+  
+- *Locations and Resources*:
+  - terrain dynamics (mountains, valleys, ...)
+  - water spots, lakes, underground locations
+  - minerals
+  - caves
+
+== Goals
+- Maximize coverage of mapping
+- Minimize redundancy
+- Find resources
