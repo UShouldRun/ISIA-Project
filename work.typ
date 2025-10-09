@@ -24,6 +24,23 @@
 
 == Communication Protocols
 
+- Drone:
+  - Drone & Rover: current position, potential resource sites, danger zones, request help, environment state
+  - Base Station: resource site positions, danger zones
+  - Mechanic: system info
+
+- Rover:
+  - Drone & Rover: current position, danger zones, request help, environment state
+  - Base Station: resource site positions, danger zones
+  - Mechanic: system info
+
+- Base Station:
+  - Drone & Rover: data collected, environment state when inside station, rover/drone arrivals and departures
+  - Mechanic: rover/drone information
+
+- Mechanic:
+  - empty
+
 == Planetary environment
 
 - *Challenges*:
