@@ -7,7 +7,7 @@
 == Agents Roles
 
 - *Rover*:
-  - *Liveness*: explore terrain, analyze soil samples, detect resources
+  - *Liveness*: explore terrain, analyze soil samples, detect resources, pick up malfunctioned agents
   - *Safety*: battery power, mobility constraints, not colide with objects
 
 - *Drone*:
@@ -22,19 +22,39 @@
   - *Liveness*: assures drone, rover and other mechanic agents are working properly,
     as well as fix them
 
+- *Sattelite*:
+  - *Liveness*: decision making
+
 == Communication Protocols
 
 - Drone:
+  - Sattelite: mission
+  - Rover: immediate action
+  - Drone: immediate action
+  - Base: if sattelite not available
+
   - Drone & Rover: current position, potential resource sites, danger zones, request help, environment state
   - Base Station: resource site positions, danger zones
   - Mechanic: system info
 
+- Sattelite:
+  - All Bases: Bids
+  - Drones: distribute missions
+
 - Rover:
+  - Drone: ---
+  - Sattelite: malfunction
+  - Base: relay data
+
   - Drone & Rover: current position, danger zones, request help, environment state
   - Base Station: resource site positions, danger zones
   - Mechanic: system info
 
 - Base Station:
+  - Sattelite: relay Bids
+  - Drone: recharge
+  - Rover: recharge
+
   - Drone & Rover: data collected, environment state when inside station, rover/drone arrivals and departures
   - Mechanic: rover/drone information
 
