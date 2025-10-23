@@ -1,18 +1,25 @@
 import spade
+
 from spade.agent import Agent
 from spade.behaviour import OneShotBehaviour, CyclicBehaviour
 from spade.message import Message
 from spade.template import Template
 
+from world.map import Map
+from world.world import World
+
 class Drone(Agent):
-    class MapTerrain(CyclicBehaviour): # Is this a cyclic behaviour
-        async def on_start(self, location_start, location_end):
-            """Path finding"""
+    class MapTerrain(CyclicBehaviour): # Is this a cyclic behaviour?
+        def a_star(self, map: Map, goal: Tuple[int, int]):
             pass
 
-        async def run(self):
+        async def on_start(self, map: Map, world: World):
+            """Initial Scan"""
+            map.add(world.objects)
+ 
+        async def run(self, map: Map, goal: Tuple[int, int]):
             """Moves to goal location"""
-            pass
+           return self.a_star(map, goal)
 
         async def on_end(self):
             """Stops to analyze"""
