@@ -11,11 +11,25 @@ from world.world import World
 from heapq import heapify, heappush, heappop
 
 class Drone(Agent):
-    def __init__(self, jid, password, position=(0, 0), base_position=(0, 0), energy=100):
+    def __init__(
+            self, jid: int, password: str,
+            position: Tuple[float, float] = (0, 0), base_position: Tuple[float, float] = (0, 0),
+            energy: int = 10000, energy_consump_rate: int = 1
+        ):
         super().__init__(jid, password)
         self.position = list(position)
         self.base_position = tuple(base_position)
         self.energy = energy
+        self.energy_consump_rate = energy_consump_rate
+
+    def energy_limit(self, curr_pos: Tuple[float, float], base_pos: Tuple[float, float]) -> int:
+        return self.energy_consump_rate * int(sqrt((curr_pos[0] - base_pos[0]) ** 2 + (curr_pos[1] - base_pos[1]) ** 2))
+
+    def get_dpos(curr: Tuple[float, float], goal: Tuple[float, float]) -> float:
+        return (
+            1 if curr[0] < goal[0] else -1 if curr[0] > goal[0] else 0,
+            1 if curr[1] < goal[1] else -1 if curr[1] > goal[1] else 0
+        )
 
     class MapTerrain(CyclicBehaviour): # Is this a cyclic behaviour? 
         async def on_start(self, map: Map, world: World):
@@ -29,6 +43,33 @@ class Drone(Agent):
         async def on_end(self):
             """Stops to analyze"""
             pass
+
+    class ReturnToBase():
+        async def run(self):
+            drone = self.agent
+
+            drone.position += drone.get_dpos(drone.position, drone.goal)
+            drone.energy -= drone.enery_consump_energy
+            print(f"[{drone.name}] Moved to: {tuple(drone.position)} | Energy: {drone.energy}%")
+
+            if tuple(drone.position) == drone.goal:
+                print(f"[{drone.name}] Arrived at base!")
+
+    class ExploreTerrain(CyclicBehaviour):
+        async def run(self):
+            drone = self.agent
+            if drone.energy <= drone.energy_limit(drone.position, drone.base_position):
+                print(f"[{drone.name}] Depleted energy!")
+                drone.add_behaviour(drone.ReturnToBase())
+                return
+
+            drone.position += drone.get_dpos(drone.position, drone.goal)
+            drone.energy -= drone.enery_consump_energy
+            print(f"[{drone.name}] Moved to: {tuple(drone.position)} | Energy: {drone.energy}%")
+
+            if tuple(drone.position) == drone.goal:
+                print(f"[{drone.name}] Arrived at destination! Starting map terrain...")
+                self.agent.add_behaviour(drone.MapTerrain())
 
     class Analyze(CyclicBehaviour):
         def run(self, world_data, agents_msg):
@@ -55,4 +96,4 @@ class Drone(Agent):
     async def setup(self):
         self.add_behaviour(self.Communicate(), Template().set_metadata("performative", "inform"))
         self.add_behaviour(self.Analyze())
-        self.add_behaviour(self.MapTerrain())
+        self.add_behaviour(self.ExploreTerrain())
