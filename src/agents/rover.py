@@ -1,9 +1,13 @@
 import spade
-from spade.agent import Agent
-from spade.behaviour import OneShotBehaviour, CyclicBehaviour
 import asyncio
 import random
+
+from spade.agent import Agent
+from spade.behaviour import OneShotBehaviour, CyclicBehaviour
 from spade.message import Message
+
+from math import sqrt
+from typing import Tuple, List
 
 class Rover(Agent):
     def __init__(
@@ -23,7 +27,7 @@ class Rover(Agent):
     def energy_limit(self, curr_pos: Tuple[float, float], base_pos: Tuple[float, float]) -> int:
         return self.energy_consump_rate * int(sqrt((curr_pos[0] - base_pos[0]) ** 2 + (curr_pos[1] - base_pos[1]) ** 2))
 
-    def get_dpos(curr: Tuple[float, float], goal: Tuple[float, float]) -> float:
+    def get_dpos(self, curr: Tuple[float, float], goal: Tuple[float, float]) -> float:
         return (
             1 if curr[0] < goal[0] else -1 if curr[0] > goal[0] else 0,
             1 if curr[1] < goal[1] else -1 if curr[1] > goal[1] else 0
@@ -61,10 +65,10 @@ class Rover(Agent):
                 rover.add_behaviour(rover.ReturnToBase())
                 return
 
-            dx, dy = rover.get_dpos(rover.position, rover.goarover.position, rover.goall)
+            dx, dy = rover.get_dpos(rover.position, rover.goal)
             rover.position[0] += dx
             rover.position[1] += dy
-            rover.energy -= rover.
+            rover.energy -= rover.energy_consump_rate
 
             print(f"[{rover.name}] Moved to: {tuple(rover.position)} | Energy: {rover.energy}%")
 
@@ -88,7 +92,7 @@ class Rover(Agent):
 
             if found:
                 resource = {"pos": tuple(rover.position), "type": random.choice(["H2O", "Fe", "Si"])}
-                rover.detected_resources.append(resouce)
+                rover.detected_resources.append(resource)
 
                 print(f"[{rover.name}] Resource found: {resource}")
                 msg = Message(to="base@planet.local", body=str(resource), metadata={"performative": "inform", "type": "resource"})

@@ -1,4 +1,5 @@
 import spade
+import asyncio
 
 from spade.agent import Agent
 from spade.behaviour import OneShotBehaviour, CyclicBehaviour
@@ -8,7 +9,8 @@ from spade.template import Template
 from world.map import Map, MapPos, AStar
 from world.world import World
 
-from heapq import heapify, heappush, heappop
+from math import sqrt
+from typing import Tuple, List
 
 class Drone(Agent):
     def __init__(
@@ -25,7 +27,7 @@ class Drone(Agent):
     def energy_limit(self, curr_pos: Tuple[float, float], base_pos: Tuple[float, float]) -> int:
         return self.energy_consump_rate * int(sqrt((curr_pos[0] - base_pos[0]) ** 2 + (curr_pos[1] - base_pos[1]) ** 2))
 
-    def get_dpos(curr: Tuple[float, float], goal: Tuple[float, float]) -> float:
+    def get_dpos(self, curr: Tuple[float, float], goal: Tuple[float, float]) -> float:
         return (
             1 if curr[0] < goal[0] else -1 if curr[0] > goal[0] else 0,
             1 if curr[1] < goal[1] else -1 if curr[1] > goal[1] else 0
@@ -49,7 +51,7 @@ class Drone(Agent):
             drone = self.agent
 
             drone.position += drone.get_dpos(drone.position, drone.base_position)
-            drone.energy -= drone.enery_consump_energy
+            drone.energy -= drone.energy_consump_rate
             print(f"[{drone.name}] Moved to: {tuple(drone.position)} | Energy: {drone.energy}%")
 
             if tuple(drone.position) == drone.base_position:
@@ -91,7 +93,7 @@ class Drone(Agent):
             dx, dy = drone.get_dpos(drone.position, drone.goal)
             drone.position[0] += dx
             drone.position[1] += dy
-            drone.energy -= drone.enery_consump_energy
+            drone.energy -= drone.energy_consump_rate
 
             print(f"[{drone.name}] Moved to: {tuple(drone.position)} | Energy: {drone.energy}%")
 
