@@ -10,6 +10,8 @@ from spade.message import Message
 
 from world.world import World, WorldObject
 
+from settings import *
+
 class Rover(Agent):
     def __init__(
         self,
@@ -28,6 +30,7 @@ class Rover(Agent):
         self.assigned_drone = assigned_drone
         self.base_jid = base_jid
 
+        # TODO: IMPLEMENT ENERGY CONSUMPTION
         self.energy = 100
         self.path: List[Tuple[float, float]] = []
         self.goal: Optional[Tuple[float, float]] = None
@@ -222,4 +225,3 @@ class Rover(Agent):
         print(f"[{self.name}] Rover initialized at {self.position}, waiting for path.")
         self.add_behaviour(self.ReceiveMessages())
         self.add_behaviour(self.MoveAlongPath())
-

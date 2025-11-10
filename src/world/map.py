@@ -1,4 +1,6 @@
+from heapq import heapify, heappop, heappush
 from math import sqrt
+
 from typing import Tuple, List
 from heapq import *
 
@@ -14,10 +16,10 @@ class Map():
         self.length: float = limit[0]
         self.height: float = limit[1]
 
-    def normalize(pos: Tuple[float, float]) -> Tuple[int, int]:
+    def normalize(self, pos: Tuple[float, float]) -> Tuple[int, int]:
         return (int(pos[0] * self.columns / self.length), int(pos[1] * self.rows / self.height))
 
-    def rescale(pos: MapPos) -> Tuple[float, float]:
+    def rescale(self, pos: MapPos) -> Tuple[float, float]:
         return (pos[0] * self.length / self.columns, pos[1] * self.height / self.rows)
 
     def distance(self, pos1: Tuple[float, float], pos2: Tuple[float, float]) -> float:
@@ -33,7 +35,7 @@ class Map():
             pos: Tuple[int, int] = Map.normalize(obj.pos)
             self.graph |= 1 << (pos[0] * self.columns + pos[1])
 
-    def remove(self, obstables: List[WorldObject]) -> None:
+    def remove(self, obstacles: List[WorldObject]) -> None:
         for obj in obstacles:
             pos: Tuple[int, int] = Map.normalize(obj.pos)
             self.graph &= (1 << (pos[0] * self.columns + pos[1])) - 1
