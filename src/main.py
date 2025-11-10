@@ -22,8 +22,7 @@ def generate_world(
     world = World([])
 
     # --- Base object ---
-    base_obj = WorldObject("base", base_center)
-    world.objects.append(base_obj)
+    world.objects.append(WorldObject("base", base_center))
 
     def random_pos_in_base():
         """Generate a random position within the base radius, ensuring no collisions."""
@@ -47,11 +46,11 @@ def generate_world(
     satellite_pos = (500, 500)
     world.objects.append(WorldObject("satellite_obj", satellite_pos))
 
-    return world, world_map, base_obj, rover_positions, drone_positions, satellite_pos
+    return world, world_map, base_center, rover_positions, drone_positions, satellite_pos
 
 async def main():
     # --- WORLD INITIALIZATION ---
-    world, world_map, base_obj, rover_positions, drone_positions, satellite_pos = generate_world()
+    world, world_map, base_center, rover_positions, drone_positions, satellite_pos = generate_world()
 
     # --- JIDs ---
     base_jid = f"base@{TAG}"
@@ -64,11 +63,7 @@ async def main():
     # Base knows all other agents
     base = Base(
         base_jid, "base",
-        base_obj,
-        world,
-        known_rovers = rover_jids,
-        known_drones = drone_jids,
-        satellite_jid = satellite_jid
+        base_center
     )
     print("Initialized Base...")
 

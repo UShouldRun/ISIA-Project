@@ -1,4 +1,6 @@
 import asyncio
+import random
+
 from collections import deque
 from math import sqrt
 from typing import Tuple, List, Dict, Optional
@@ -7,21 +9,16 @@ import spade
 from spade.agent import Agent
 from spade.behaviour import CyclicBehaviour, OneShotBehaviour
 from spade.message import Message
+from spade.template import Template
 
-from world.world import World, WorldObject
-from world.map import Map
+from settings import *
 
 class Base(Agent):
     def __init__(
         self,
         jid: str,
         password: str,
-        position: WorldObject,
-        world: World,
-        known_drones: List[str],
-        known_rovers: List[str],
-        satellite_jid: str,
-        base_radius: float = 100.0
+        position: Tuple[float, float] = [0, 0]
     ) -> None:
         super().__init__(jid, password)
         self.position = tuple(position)
@@ -135,63 +132,63 @@ class Base(Agent):
             self.rovers_queue.append(jid)
 
     # -------------------------------------------------------------------------
-    # BEHAVIOUR: Handle messages from Satellite / Drones / Rovers
+    # BEHAVIOURS
     # -------------------------------------------------------------------------
-    class ManageMissions(CyclicBehaviour):
+    class ReceiveMessages(CyclicBehaviour):
         async def run(self):
             base = self.agent
             msg = await self.receive(timeout=5)
-            if not msg:
-                await asyncio.sleep(1)
-                return
 
-            perf = msg.metadata.get("performative", "")
-            sender = str(msg.sender).split("@")[0]
-            print(f"[{base.name}] Received ({perf}) from {sender}: {msg.body}")
+            if msg:
+                sender = str(msg.sender).split("@")[0]
+                msg_type = msg.metadata.get("type")
+                print(f"[{base.name}] Message received from {sender} (type: {msg_type})")
 
-            # Satellite requests mission allocation
-            if perf == "request":
-                mission_data = eval(msg.body)
-                target = mission_data.get("target")
-                print(f"[{base.name}] Mission request received for area {target}")
+                # --- STATUS UPDATE ---
+                if msg_type == "status":
+                    if "rover" in sender:
+                        base.rovers.setdefault(sender, {})["status"] = "available"
+                        print(f"[{base.name}] Rover {sender} marked as available.")
+                    elif "drone" in sender:
+                        base.drones.setdefault(sender, {})["status"] = "available"
+                        print(f"[{base.name}] Drone {sender} marked as available.")
 
-                # Assign a Drone and Rover using FIFO
-                drone = base.select_drone()
-                rover = base.select_rover()
-                if not drone or not rover:
-                    print(f"[{base.name}] No available agents for mission at {target}")
-                    return
+                # --- RESOURCE DISCOVERY ---
+                elif msg_type == "resource":
+                    resource_data = eval(msg.body)
+                    base.resources.append(resource_data)
+                    print(f"[{base.name}] Resource logged: {resource_data}")
 
-                base.active_missions[target] = {"drone": drone, "rover": rover}
-                print(f"[{base.name}] Assigned Drone {drone} and Rover {rover} to {target}")
+                    await base.send_message(
+                        "satellite@planet.local", "resource_found", str(resource_data)
+                    )
 
-                await base.send_msg(
-                    to=drone,
-                    body=str({"target": target, "rover": rover}),
-                    perf="inform",
-                )
+                # --- POSITION UPDATE ---
+                elif msg_type == "position_update":
+                    position_data = eval(msg.body)
+                    if "rover" in sender:
+                        base.rovers.setdefault(sender, {}).update({
+                            "position": position_data["position"],
+                            "energy": position_data["energy"]
+                        })
+                    elif "drone" in sender:
+                        base.drones.setdefault(sender, {}).update({
+                            "position": position_data["position"],
+                            "energy": position_data["energy"]
+                        })
 
-            # Drones inform mission completion
-            elif perf == "inform_done":
-                data = eval(msg.body)
-                target = data.get("target")
-                drone = sender
-                print(f"[{base.name}] Drone {drone} completed mission at {target}")
-                base.mark_drone_available(drone)
+                # --- MISSION REQUEST FROM SATELLITE ---
+                elif msg_type == "mission_request":
+                    target_pos = eval(msg.body)
+                    closest_rover = base.find_closest_rover(target_pos)
 
-            # Rovers report mission completion
-            elif perf == "inform_success":
-                data = eval(msg.body)
-                target = data.get("target")
-                rover = sender
-                print(f"[{base.name}] Rover {rover} finished mission at {target}")
-                base.mark_rover_available(rover)
+                    await base.send_message(
+                        str(msg.sender),
+                        "rover_assignment",
+                        str({"rover": closest_rover, "target": target_pos})
+                    )
 
-            # Drones or Rovers send resource discovery
-            elif perf == "inform_resource":
-                resource_data = eval(msg.body)
-                base.resource_reports.append(resource_data)
-                print(f"[{base.name}] Resource reported: {resource_data}")
+                    print(f"[{base.name}] Assigned rover {closest_rover} to mission at {target_pos}")
 
             await asyncio.sleep(1)
 
@@ -310,5 +307,6 @@ class Base(Agent):
     # SETUP
     # -------------------------------------------------------------------------
     async def setup(self):
-        print(f"[{self.name}] Base online at position {self.position}")
-        self.add_behaviour(self.ManageMissions())
+        print(f"[{self.name}] Base operational at position {self.position}")
+        self.add_behaviour(self.ReceiveMessages())
+        self.add_behaviour(self.MissionResponder())
