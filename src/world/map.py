@@ -1,4 +1,8 @@
+from heapq import heapify, heappop, heappush
 from math import sqrt
+from typing import List, Tuple
+
+from world.world import WorldObject
 
 MapPos = Tuple[int, int]
 
@@ -10,10 +14,10 @@ class Map():
         self.length: float = limit[0]
         self.height: float = limit[1]
 
-    def normalize(pos: Tuple[float, float]) -> Tuple[int, int]:
+    def normalize(self, pos: Tuple[float, float]) -> Tuple[int, int]:
         return (int(pos[0] * self.columns / self.length), int(pos[1] * self.rows / self.height))
 
-    def rescale(pos: MapPos) -> Tuple[float, float]:
+    def rescale(self, pos: MapPos) -> Tuple[float, float]:
         return (pos[0] * self.length / self.columns, pos[1] * self.height / self.rows)
 
     def distance(self, pos1: Tuple[float, float], pos2: Tuple[float, float]) -> float:
@@ -29,7 +33,7 @@ class Map():
             pos: Tuple[int, int] = Map.normalize(obj.pos)
             self.graph |= 1 << (pos[0] * self.columns + pos[1])
 
-    def remove(self, obstables: List[WorldObject]) -> None:
+    def remove(self, obstacles: List[WorldObject]) -> None:
         for obj in obstacles:
             pos: Tuple[int, int] = Map.normalize(obj.pos)
             self.graph &= (1 << (pos[0] * self.columns + pos[1])) - 1
@@ -38,15 +42,15 @@ class Map():
         i, j = Map.normalize(pos)
         return (self.graph >> (i * self.columns + j)) & 1
 
+class AStarNode():
+    def __init__(self, pos: MapPos, score: float) -> None:
+        self.pos   = pos
+        self.score = score
+
+    def __lt__(self, other) -> bool:
+        return self.score < other.score
+        
 class AStar():
-    class AStarNode():
-        def __init__(self, pos: MapPos, score: float) -> None:
-            self.pos   = pos
-            self.score = score
-
-        def __lt__(self, other) -> bool:
-            return self.score < other.score
-
     @staticmethod
     def _reconstruct(map: Map, path: dict[MapPos, MapPos], start: MapPos, goal: MapPos) -> List[Tuple[float, float]]:
         node: MapPos = goal
@@ -83,13 +87,13 @@ class AStar():
             }
         fScore[s] = map.distance(s, g)
 
-        while queue != []:
+        while min_heap != []:
             curr: MapPos = heappop(min_heap).pos
             if curr[0] == g[0] and curr[1] == g[1]:
-                return _reconstruct(map, path, s, g)
+                return AStar._reconstruct(map, path, s, g)
 
             neighbours: List[MapPos] = filter(
-                    lambda pos: map.in_map(pos) and ,
+                    lambda pos: map.in_map(pos) and
                     [(curr[0] + dir_x, curr[1] + dir_y)
                      for dir_x, dir_y in [
                          (-1,-1), (0,-1), (1,-1), (1,0),
