@@ -8,6 +8,8 @@ from spade.message import Message
 from math import sqrt
 from typing import Tuple, List
 
+from settings import *
+
 class Rover(Agent):
     def __init__(
         self, jid: int, password: str,
@@ -18,8 +20,8 @@ class Rover(Agent):
         super().__init__(jid, password)
         self.position = list(position)
         self.base_position = tuple(base_position)
-        self.energy = max_energy
-        self.max_energy = max_energy
+        self.energy = MAX_ROVER_CHARGE
+        self.max_energy = MAX_ROVER_CHARGE
         self.energy_consump_rate = energy_consump_rate
         self.goal = None
         self.detected_resources = []
