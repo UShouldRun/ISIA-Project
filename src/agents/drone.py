@@ -1,142 +1,158 @@
 import spade
 import asyncio
-from spade.agent import Agent
-from spade.behaviour import OneShotBehaviour, CyclicBehaviour
-from spade.message import Message
-from spade.template import Template
-from world.map import Map, MapPos, AStar
-from world.world import World
+import random
 from math import sqrt
-from typing import Tuple, List
+from typing import Tuple, List, Dict, Optional
+
+from spade.agent import Agent
+from spade.behaviour import CyclicBehaviour
+from spade.message import Message
+
+from world.map import Map, AStar
+from world.world import World
 
 class Drone(Agent):
     def __init__(
-            self, jid: str, password: str,
-            position: Tuple[float, float] = (0, 0),
-            base_position: Tuple[float, float] = (0, 0),
-            energy: int = 10000,
-            energy_consump_rate: int = 1
-        ):
+        self,
+        jid: str,
+        password: str,
+        world: World,
+        map: Map,
+        base_position: Tuple[float, float],
+        assigned_rover: str,
+        move_step: float = 10.0,
+        energy_consump_rate: float = 0.5,
+    ) -> None:
         super().__init__(jid, password)
-        self.position = list(position)
-        self.base_position = tuple(base_position)
-        self.energy = energy
-        self.max_energy = energy
+        self.world = world
+        self.map = map
+        self.position = base_position
+        self.base_position = base_position
+        self.assigned_rover = assigned_rover
+        self.move_step = move_step
         self.energy_consump_rate = energy_consump_rate
-        self.goal = (0, 0)
 
-    def energy_limit(self, curr_pos: Tuple[float, float], base_pos: Tuple[float, float]) -> int:
-        """Minimum energy required to return to base."""
-        return self.energy_consump_rate * int(sqrt((curr_pos[0] - base_pos[0]) ** 2 + (curr_pos[1] - base_pos[1]) ** 2))
+        self.energy = 100
+        self.status = "idle"
+        self.goal: Optional[Tuple[float, float]] = None
+
+    # -------------------------------------------------------------------------
+    # UTILITIES
+    # -------------------------------------------------------------------------
+    async def send_msg(self, to: str, performative: str, ontology: str, body: str):
+        msg = Message(
+            to=to,
+            metadata={"performative": performative, "ontology": ontology},
+            body=body,
+        )
+        await self.send(msg)
+        print(f"[{self.name}] → {to} ({performative}/{ontology}): {body}")
+
+    def energy_limit(self, curr_pos: Tuple[float, float]) -> int:
+        """Minimum energy needed to return to base."""
+        bx, by = self.base_position
+        return int(self.energy_consump_rate * sqrt((curr_pos[0] - bx) ** 2 + (curr_pos[1] - by) ** 2))
 
     def get_dpos(self, curr: Tuple[float, float], goal: Tuple[float, float]) -> Tuple[int, int]:
-        """Step direction toward goal."""
+        """Compute a one-step delta towards the goal."""
         return (
             1 if curr[0] < goal[0] else -1 if curr[0] > goal[0] else 0,
-            1 if curr[1] < goal[1] else -1 if curr[1] > goal[1] else 0
+            1 if curr[1] < goal[1] else -1 if curr[1] > goal[1] else 0,
         )
 
-    async def send_message(self, to: str, msg_type: str, body: str):
-        """Utility method for standardized communication."""
-        msg = Message(to=to, metadata={"type": msg_type}, body=body)
-        await self.send(msg)
-        print(f"[{self.name}] → Sent to {to} ({msg_type}): {body}")
+    async def try_go_around(self, goal: Tuple[float, float]) -> Optional[Tuple[float, float]]:
+        """Try a simple local detour around an obstacle."""
+        for _ in range(5):
+            offset_x = random.uniform(-15, 15)
+            offset_y = random.uniform(-15, 15)
+            candidate = (self.position[0] + offset_x, self.position[1] + offset_y)
+            if not self.world.collides(self.jid, candidate):
+                print(f"[{self.name}] Avoiding obstacle → {candidate}")
+                return candidate
+        return None
 
     # -------------------------------------------------------------------------
     # BEHAVIOURS
     # -------------------------------------------------------------------------
-    class MapTerrain(CyclicBehaviour):
-        async def on_start(self):
-            print(f"[{self.agent.name}] Starting terrain mapping...")
-
+    class DroneControl(CyclicBehaviour):
         async def run(self):
             drone = self.agent
-            # Example scanning logic
-            scan_data = {"position": tuple(drone.position), "resource_sites": [], "danger_zones": []}
-            print(f"[{drone.name}] Scanning area around {drone.position}")
+            msg = await self.receive(timeout=5)
+            if not msg:
+                await asyncio.sleep(1)
+                return
 
-            # Send map data to Base
-            await drone.send_message("base@planet.local", "map_data", str(scan_data))
+            performative = msg.metadata.get("performative")
+            ontology = msg.metadata.get("ontology")
+            sender = str(msg.sender)
 
-            await asyncio.sleep(3)
+            # ---------------------------------------------------------
+            # BASE → DRONE : mission request
+            # ---------------------------------------------------------
+            if performative == "request" and ontology == "assign_goal":
+                data = eval(msg.body)
+                goal = tuple(data["goal"])
+                print(f"[{drone.name}] Received mission: navigate rover to {goal}")
 
-    class ReturnToBase(CyclicBehaviour):
-        async def run(self):
-            drone = self.agent
+                path = AStar.run(drone.map, start=drone.position, goal=goal)
+                if path:
+                    await drone.send_msg(
+                        to=drone.assigned_rover,
+                        performative="inform",
+                        ontology="path_to_goal",
+                        body=str(path),
+                    )
+                    drone.status = "assisting"
+                else:
+                    print(f"[{drone.name}] Could not find path to goal {goal}")
 
-            dx, dy = drone.get_dpos(drone.position, drone.base_position)
-            drone.position[0] += dx
-            drone.position[1] += dy
-            drone.energy -= drone.energy_consump_rate
+            # ---------------------------------------------------------
+            # ROVER → DRONE : reroute request
+            # ---------------------------------------------------------
+            elif performative == "request" and ontology == "reroute":
+                data = eval(msg.body)
+                curr = tuple(data["current"])
+                goal = tuple(data["goal"])
+                print(f"[{drone.name}] Reroute requested by {sender} → from {curr} to {goal}")
 
-            print(f"[{drone.name}] Returning to base... Pos: {tuple(drone.position)} | Energy: {drone.energy}%")
+                path = AStar.run(drone.map, start=curr, goal=goal)
+                if path:
+                    await drone.send_msg(
+                        to=sender,
+                        performative="inform",
+                        ontology="path_to_goal",
+                        body=str(path),
+                    )
+                    print(f"[{drone.name}] Sent new reroute path to {sender}")
+                else:
+                    print(f"[{drone.name}] Could not compute reroute path from {curr} to {goal}")
 
-            await drone.send_message("base@planet.local", "status",
-                                     f"Returning to base. Energy: {drone.energy}%")
+            # ---------------------------------------------------------
+            # ROVER → DRONE : request return path to base
+            # ---------------------------------------------------------
+            elif performative == "request" and ontology == "return_path":
+                data = eval(msg.body)
+                curr = tuple(data["current"])
+                base = drone.base_position
+                print(f"[{drone.name}] Return-to-base path requested from {curr}")
 
-            # If arrived
-            if tuple(drone.position) == drone.base_position:
-                print(f"[{drone.name}] Arrived at base. Charging...")
-                while drone.energy < drone.max_energy:
-                    drone.energy += drone.max_energy // 20
-                    if drone.energy > drone.max_energy:
-                        drone.energy = drone.max_energy
-                    await asyncio.sleep(1)
-                    print(f"[{drone.name}] Charging... {drone.energy}%")
-
-                await drone.send_message("base@planet.local", "status",
-                                         "Fully charged. Ready for next mission.")
-                drone.add_behaviour(drone.ExploreTerrain())
-                self.kill()
+                path = AStar.run(drone.map, start=curr, goal=base)
+                if path:
+                    await drone.send_msg(
+                        to=sender,
+                        performative="inform",
+                        ontology="return_path_to_base",
+                        body=str(path),
+                    )
+                    print(f"[{drone.name}] Sent return path to base for {sender}")
+                else:
+                    print(f"[{drone.name}] Could not compute return path from {curr} to {base}")
 
             await asyncio.sleep(1)
 
-    class ExploreTerrain(CyclicBehaviour):
-        async def run(self):
-            drone = self.agent
-
-            # Check if enough energy to continue
-            if drone.energy <= drone.energy_limit(drone.position, drone.base_position):
-                print(f"[{drone.name}] Low energy - returning to base.")
-                drone.add_behaviour(drone.ReturnToBase())
-                self.kill()
-                return
-
-            # Move one step toward goal
-            dx, dy = drone.get_dpos(drone.position, drone.goal)
-            drone.position[0] += dx
-            drone.position[1] += dy
-            drone.energy -= drone.energy_consump_rate
-
-            print(f"[{drone.name}] Exploring... Pos: {tuple(drone.position)} | Energy: {drone.energy}%")
-
-            # Broadcast to nearby rovers/drones
-            await drone.send_message("rover@planet.local", "status",
-                                     f"Current position: {tuple(drone.position)} | Energy: {drone.energy}%")
-
-            # If goal reached
-            if tuple(drone.position) == drone.goal:
-                print(f"[{drone.name}] Arrived at goal. Starting terrain mapping...")
-                drone.add_behaviour(drone.MapTerrain())
-                self.kill()
-
-            await asyncio.sleep(2)
-
-    class Analyze(CyclicBehaviour):
-        async def run(self):
-            drone = self.agent
-            # Simulate periodic system diagnostics
-            diagnostics = {
-                "energy": drone.energy,
-                "position": tuple(drone.position),
-                "status": "operational" if drone.energy > 0 else "offline"
-            }
-            await drone.send_message("mechanic@planet.local", "system_info", str(diagnostics))
-            await asyncio.sleep(20)
-
+    # -------------------------------------------------------------------------
+    # SETUP
     # -------------------------------------------------------------------------
     async def setup(self):
-        print(f"[{self.name}] Drone online at position {self.position}")
-        self.add_behaviour(self.ExploreTerrain())
-        self.add_behaviour(self.Analyze())
-
+        print(f"[{self.name}] Drone initialized at {self.position}, waiting for missions.")
+        self.add_behaviour(self.DroneControl())

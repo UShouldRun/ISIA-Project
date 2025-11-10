@@ -1,176 +1,225 @@
 import spade
 import asyncio
 import random
+from math import sqrt
+from typing import Tuple, List, Dict, Optional
 
 from spade.agent import Agent
-from spade.behaviour import OneShotBehaviour, CyclicBehaviour
+from spade.behaviour import CyclicBehaviour
 from spade.message import Message
-from math import sqrt
-from typing import Tuple, List
+
+from world.world import World, WorldObject
 
 class Rover(Agent):
     def __init__(
-        self, jid: int, password: str,
-        position: Tuple[float, float] = (0, 0),
-        base_position: Tuple[float, float] = (0, 0),
-        max_energy: int = 10000, energy_consump_rate: int = 1
+        self,
+        jid: str,
+        password: str,
+        position: Tuple[float, float],
+        world: World,
+        assigned_drone: str,
+        base_jid: str,
+        move_step: float = 5.0,
+        obstacle_radius: float = 5.0,
     ) -> None:
         super().__init__(jid, password)
-        self.position = list(position)
-        self.base_position = tuple(base_position)
-        self.energy = max_energy
-        self.max_energy = max_energy
-        self.energy_consump_rate = energy_consump_rate
-        self.goal = None
-        self.detected_resources = []
+        self.position = position
+        self.world = world
+        self.assigned_drone = assigned_drone
+        self.base_jid = base_jid
 
-    def energy_limit(self, curr_pos: Tuple[float, float], base_pos: Tuple[float, float]) -> int:
-        return self.energy_consump_rate * int(
-            sqrt((curr_pos[0] - base_pos[0]) ** 2 + (curr_pos[1] - base_pos[1]) ** 2)
+        self.energy = 100
+        self.path: List[Tuple[float, float]] = []
+        self.goal: Optional[Tuple[float, float]] = None
+        self.status = "idle"
+
+        self.move_step = move_step
+        self.obstacle_radius = obstacle_radius
+
+        # Resource detection probabilities
+        self.resource_probs = {
+            "iron": 0.3,        # 30% chance
+            "silicon": 0.2,     # 20% chance
+            "water_ice": 0.1,   # 10% chance
+        }
+
+    # -------------------------------------------------------------------------
+    # UTILITIES
+    # -------------------------------------------------------------------------
+    async def send_msg(
+        self,
+        to: str,
+        performative: str,
+        ontology: str,
+        body: str,
+    ):
+        """Unified FIPA-compliant message sending."""
+        msg = Message(
+            to=to,
+            metadata={"performative": performative, "ontology": ontology},
+            body=body,
         )
+        await self.send(msg)
+        print(f"[{self.name}] → {to} ({performative}/{ontology}): {body}")
 
     def get_dpos(self, curr: Tuple[float, float], goal: Tuple[float, float]) -> Tuple[int, int]:
+        """Compute one-step delta toward goal."""
         return (
             1 if curr[0] < goal[0] else -1 if curr[0] > goal[0] else 0,
-            1 if curr[1] < goal[1] else -1 if curr[1] > goal[1] else 0
+            1 if curr[1] < goal[1] else -1 if curr[1] > goal[1] else 0,
         )
 
-    async def send_message(self, to: str, msg_type: str, body: str):
-        """Unified communication function for all rover behaviours."""
-        msg = Message(to=to, metadata={"type": msg_type}, body=body)
-        await self.send(msg)
-        print(f"[{self.name}] → Sent to {to} ({msg_type}): {body}")
+    async def try_go_around(self, goal: Tuple[float, float]) -> Optional[Tuple[float, float]]:
+        """Try simple local avoidance: random offset around the obstacle."""
+        for _ in range(5):
+            offset_x = random.uniform(-10, 10)
+            offset_y = random.uniform(-10, 10)
+            candidate = (self.position[0] + offset_x, self.position[1] + offset_y)
+            if not self.world.collides(self.jid, candidate):
+                print(f"[{self.name}] Avoiding obstacle locally → {candidate}")
+                return candidate
+        return None
 
     # -------------------------------------------------------------------------
     # BEHAVIOURS
     # -------------------------------------------------------------------------
-    class WaitForMission(CyclicBehaviour):
-        async def run(self):
-            print(f"[{self.agent.name}] Awaiting mission...")
-            msg = await self.receive(timeout=15)
-
-            if msg and msg.metadata.get("type") == "mission":
-                rover = self.agent
-                rover.goal = eval(msg.body)
-                print(f"[{rover.name}] New destination received: {rover.goal}")
-
-                await rover.send_message("satellite@planet.local", "ack",
-                                         f"Mission received: {rover.goal}")
-
-                if rover.energy < 30:
-                    print(f"[{rover.name}] Insufficient energy ({rover.energy}%). Charging...")
-                    await rover.send_message("base@planet.local", "status",
-                                             "Insufficient energy to start mission.")
-                    await asyncio.sleep(5)
-                    return
-
-                rover.add_behaviour(rover.ExploreTerrain())
-            else:
-                print(f"[{self.agent.name}] No mission received. Continuing on standby...")
-                await asyncio.sleep(5)
-
-    class ExploreTerrain(CyclicBehaviour):
-        async def on_start(self):
-            print(f"[{self.agent.name}] Starting exploration to {self.agent.goal}...")
-
+    class ReceiveMessages(CyclicBehaviour):
         async def run(self):
             rover = self.agent
-
-            if rover.energy <= rover.energy_limit(rover.position, rover.base_position):
-                print(f"[{rover.name}] Low energy detected. Returning to base.")
-                await rover.send_message("base@planet.local", "status", "Energy low, returning to base.")
-                rover.add_behaviour(rover.ReturnToBase())
-                self.kill()
+            msg = await self.receive(timeout=5)
+            if not msg:
+                await asyncio.sleep(1)
                 return
 
-            dx, dy = rover.get_dpos(rover.position, rover.goal)
-            rover.position[0] += dx
-            rover.position[1] += dy
-            rover.energy -= rover.energy_consump_rate
+            performative = msg.metadata.get("performative")
+            ontology = msg.metadata.get("ontology")
+            sender = str(msg.sender)
 
-            print(f"[{rover.name}] Moved to: {tuple(rover.position)} | Energy: {rover.energy}%")
+            # --------------------------
+            # DRONE → ROVER : Path to Goal
+            # --------------------------
+            if performative == "inform" and ontology == "path_to_goal":
+                rover.path = eval(msg.body)
+                rover.goal = rover.path[-1] if rover.path else None
+                rover.status = "moving"
+                print(f"[{rover.name}] Received new path ({len(rover.path)} steps) to {rover.goal}")
 
-            # Send update to nearby Drone (coordination)
-            await rover.send_message("drone@planet.local", "status",
-                                     f"Position: {tuple(rover.position)}, Energy: {rover.energy}%")
+            # --------------------------
+            # DRONE → ROVER : Return Path to Base
+            # --------------------------
+            elif performative == "inform" and ontology == "return_path_to_base":
+                rover.path = eval(msg.body)
+                rover.goal = rover.path[-1] if rover.path else None
+                rover.status = "returning"
+                print(f"[{rover.name}] Received return path ({len(rover.path)} steps) to base.")
 
-            if tuple(rover.position) == rover.goal:
-                print(f"[{rover.name}] Arrived at destination! Starting analysis...")
-                rover.add_behaviour(rover.AnalyzeSoil())
-                self.kill()
+            await asyncio.sleep(1)
+
+    class MoveAlongPath(CyclicBehaviour):
+        async def run(self):
+            rover = self.agent
+            if rover.status not in ["moving", "returning"] or not rover.path:
+                await asyncio.sleep(2)
+                return
+
+            next_step = rover.path[0]
+            dx, dy = rover.get_dpos(rover.position, next_step)
+            new_pos = (rover.position[0] + dx * rover.move_step, rover.position[1] + dy * rover.move_step)
+
+            if rover.world.collides(self.jid, new_pos):
+                print(f"[{rover.name}] Collision detected near {new_pos}")
+
+                # Attempt local avoidance
+                alt = await rover.try_go_around(next_step)
+                if alt:
+                    rover.position = alt
+                    print(f"[{rover.name}] Avoided obstacle locally.")
+                else:
+                    # Request reroute from drone
+                    print(f"[{rover.name}] Could not avoid locally, requesting reroute.")
+                    await rover.send_msg(
+                        to=rover.assigned_drone,
+                        performative="request",
+                        ontology="reroute",
+                        body=str({"current": rover.position, "goal": rover.goal}),
+                    )
+                    rover.status = "waiting"
+                    return
+            else:
+                rover.position = new_pos
+                dist_to_next_step = sqrt((rover.position[0] - next_step[0]) ** 2 + (rover.position[1] - next_step[1]) ** 2)
+                if dist_to_next_step < 5:
+                    rover.path.pop(0)
+
+                print(f"[{rover.name}] Moving... Position: {rover.position}")
+
+                # Mission goal reached
+                if not rover.path:
+                    if rover.status == "moving":
+                        rover.status = "arrived"
+                        print(f"[{rover.name}] Arrived at mission goal {rover.goal}")
+                        await rover.send_msg(
+                            to=rover.base_jid,
+                            performative="inform",
+                            ontology="mission_complete",
+                            body=str({"position": rover.position}),
+                        )
+
+                        # Trigger soil analysis after mission
+                        rover.add_behaviour(rover.AnalyzeSoil())
+
+                        # Request path back to base
+                        await rover.send_msg(
+                            to=rover.assigned_drone,
+                            performative="request",
+                            ontology="return_path",
+                            body=str({"current": rover.position, "base": rover.base_jid}),
+                        )
+                        rover.status = "waiting_return"
+
+                    elif rover.status == "returning":
+                        rover.status = "idle"
+                        print(f"[{rover.name}] Returned to base successfully at {rover.position}")
+                        await rover.send_msg(
+                            to=rover.base_jid,
+                            performative="inform",
+                            ontology="returned_to_base",
+                            body=str({"position": rover.position}),
+                        )
 
             await asyncio.sleep(2)
 
-        async def on_end(self):
-            print(f"[{self.agent.name}] Exploration completed.")
-
-    class AnalyzeSoil(OneShotBehaviour):
+    # -------------------------------------------------------------------------
+    # NEW BEHAVIOUR — ANALYZE SOIL
+    # -------------------------------------------------------------------------
+    class AnalyzeSoil(CyclicBehaviour):
         async def run(self):
             rover = self.agent
-            print(f"[{rover.name}] Analyzing soil at {tuple(rover.position)}...")
+            found_resources = []
 
-            await asyncio.sleep(1)
-            found = random.random() < 0.3
+            for resource, prob in rover.resource_probs.items():
+                if random.random() < prob:
+                    found_resources.append(resource)
 
-            if found:
-                resource = {"pos": tuple(rover.position), "type": random.choice(["H2O", "Fe", "Si"])}
-                rover.detected_resources.append(resource)
-                print(f"[{rover.name}] Resource found: {resource}")
-
-                await rover.send_message("base@planet.local", "resource", str(resource))
+            if found_resources:
+                await rover.send_msg(
+                    to=rover.base_jid,
+                    performative="inform",
+                    ontology="resources_found",
+                    body=str({"position": rover.position, "resources": found_resources}),
+                )
+                print(f"[{rover.name}] Resources found at {rover.position}: {found_resources}")
             else:
-                await rover.send_message("drone@planet.local", "status",
-                                         f"No resource found at {tuple(rover.position)}")
+                print(f"[{rover.name}] No resources found at {rover.position}.")
 
-    class DetectResources(CyclicBehaviour):
-        async def run(self):
-            rover = self.agent
-            if random.random() < 0.1:
-                print(f"[{rover.name}] Sensor anomaly detected.")
-                await rover.send_message("mechanic@planet.local", "alert",
-                                         "Sensor anomaly detected.")
-            await asyncio.sleep(3)
-
-    class ReturnToBase(CyclicBehaviour):
-        async def on_start(self):
-            print(f"[{self.agent.name}] Returning to base at {self.agent.base_position}...")
-
-        async def run(self):
-            rover = self.agent
-            dx, dy = rover.get_dpos(rover.position, rover.base_position)
-            rover.position[0] += dx
-            rover.position[1] += dy
-            rover.energy -= rover.energy_consump_rate
-
-            print(f"[{rover.name}] Returning... position: {tuple(rover.position)}, energy: {rover.energy}%")
-
-            await rover.send_message("base@planet.local", "status",
-                                     f"Returning to base. Current position: {tuple(rover.position)}")
-
-            if tuple(rover.position) == rover.base_position:
-                print(f"[{rover.name}] Arrived at base with {rover.energy}% energy. Charging...")
-                await rover.send_message("base@planet.local", "status",
-                                         f"Arrived at base with {rover.energy}% energy. Starting recharge.")
-
-                while rover.energy < rover.max_energy:
-                    rover.energy += rover.max_energy // 20
-                    if rover.energy > rover.max_energy:
-                        rover.energy = rover.max_energy
-                    print(f"[{rover.name}] Charging... {rover.energy}%")
-                    await asyncio.sleep(1)
-
-                print(f"[{rover.name}] Fully charged and ready.")
-                await rover.send_message("base@planet.local", "status",
-                                         "Fully charged. Ready for new mission.")
-
-                rover.add_behaviour(rover.WaitForMission())
-                self.kill()
+            self.kill()  # one-time analysis
             await asyncio.sleep(1)
 
     # -------------------------------------------------------------------------
     # SETUP
     # -------------------------------------------------------------------------
     async def setup(self):
-        print(f"[{self.name}] Rover online at position {self.position}")
-        self.add_behaviour(self.WaitForMission())
-        self.add_behaviour(self.DetectResources())
+        print(f"[{self.name}] Rover initialized at {self.position}, waiting for path.")
+        self.add_behaviour(self.ReceiveMessages())
+        self.add_behaviour(self.MoveAlongPath())
+

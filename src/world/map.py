@@ -1,4 +1,8 @@
 from math import sqrt
+from typing import Tuple, List
+from heapq import *
+
+from .world import WorldObject
 
 MapPos = Tuple[int, int]
 
@@ -38,15 +42,15 @@ class Map():
         i, j = Map.normalize(pos)
         return (self.graph >> (i * self.columns + j)) & 1
 
+class AStarNode():
+    def __init__(self, pos: MapPos, score: float) -> None:
+        self.pos   = pos
+        self.score = score
+
+    def __lt__(self, other) -> bool:
+        return self.score < other.score
+
 class AStar():
-    class AStarNode():
-        def __init__(self, pos: MapPos, score: float) -> None:
-            self.pos   = pos
-            self.score = score
-
-        def __lt__(self, other) -> bool:
-            return self.score < other.score
-
     @staticmethod
     def _reconstruct(map: Map, path: dict[MapPos, MapPos], start: MapPos, goal: MapPos) -> List[Tuple[float, float]]:
         node: MapPos = goal
@@ -83,13 +87,13 @@ class AStar():
             }
         fScore[s] = map.distance(s, g)
 
-        while queue != []:
+        while min_heap != []:
             curr: MapPos = heappop(min_heap).pos
             if curr[0] == g[0] and curr[1] == g[1]:
-                return _reconstruct(map, path, s, g)
+                return AStar._reconstruct(map, path, s, g)
 
             neighbours: List[MapPos] = filter(
-                    lambda pos: map.in_map(pos) and ,
+                    lambda pos: map.in_map(pos) and
                     [(curr[0] + dir_x, curr[1] + dir_y)
                      for dir_x, dir_y in [
                          (-1,-1), (0,-1), (1,-1), (1,0),

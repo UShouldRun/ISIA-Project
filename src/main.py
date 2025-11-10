@@ -1,36 +1,122 @@
+import random
 import asyncio
 import spade
 
-from satellite import Satellite
-from base import Base
-from rover import Rover
-from drone import Drone
+from world.setting import TAG
+from world.world import World, WorldObject
+from world.map import Map
+from agents.base import Base
+from agents.drone import Drone
+from agents.rover import Rover
+from agents.satellite import Satellite
+
+from typing import Tuple, List
+
+def generate_world(
+    map_limit: Tuple[int, int] = (1000, 1000),
+    base_center: Tuple[int, int] = (100, 100),
+    base_radius: float = 50
+) -> Tuple[World, Map, WorldObject, List[Tuple[float, float]], List[Tuple[float, float]], Tuple[float, float]]:
+    """Generate the world and assign initial non-colliding positions for all agents."""
+    world_map = Map(map_limit)
+    world = World([])
+
+    # --- Base object ---
+    base_obj = WorldObject("base", base_center)
+    world.objects.append(base_obj)
+
+    def random_pos_in_base():
+        """Generate a random position within the base radius, ensuring no collisions."""
+        while True:
+            x = random.uniform(base_center[0] - base_radius, base_center[0] + base_radius)
+            y = random.uniform(base_center[1] - base_radius, base_center[1] + base_radius)
+            if all(((x - o.pos[0]) ** 2 + (y - o.pos[1]) ** 2) ** 0.5 > 10 for o in world.objects):
+                return (x, y)
+
+    # --- Generate initial positions ---
+    rover_positions = [random_pos_in_base() for _ in range(2)]
+    drone_positions = [random_pos_in_base() for _ in range(2)]
+
+    # --- Register all world objects with unique IDs ---
+    for i, pos in enumerate(rover_positions, start=1):
+        world.objects.append(WorldObject(f"rover{i}_obj", pos))
+    for i, pos in enumerate(drone_positions, start=1):
+        world.objects.append(WorldObject(f"drone{i}_obj", pos))
+
+    # --- Satellite position (not colliding) ---
+    satellite_pos = (500, 500)
+    world.objects.append(WorldObject("satellite_obj", satellite_pos))
+
+    return world, world_map, base_obj, rover_positions, drone_positions, satellite_pos
 
 async def main():
-    print("\nStarting multi-agent planetary exploration simulation...\n")
+    # --- WORLD INITIALIZATION ---
+    world, world_map, base_obj, rover_positions, drone_positions, satellite_pos = generate_world()
 
-    satellite = Satellite("satellite@localhost", "satellite_pass")
-    base = Base("base@localhost", "base_pass", position=(0, 0))
-    rover1 = Rover("rover1@localhost", "rover1_pass", position=(0, 0), base_position=(0, 0))
-    drone1 = Drone("drone1@localhost", "drone1_pass", position=(5, 5), base_position=(0, 0))
+    # --- JIDs ---
+    base_jid = f"base@{TAG}"
+    satellite_jid = f"satellite@{TAG}"
+    rover_jids = [f"rover{i}@{TAG}" for i in range(1, len(rover_positions) + 1)]
+    drone_jids = [f"drone{i}@{TAG}" for i in range(1, len(drone_positions) + 1)]
 
-    await satellite.start(auto_register=True)
-    await base.start(auto_register=True)
-    await rover1.start(auto_register=True)
-    await drone1.start(auto_register=True)
+    # --- AGENTS CREATION ---
 
-    print("All agents started. Simulation running...\n")
+    # Base knows all other agents
+    base = Base(
+        base_jid, "base",
+        base_obj,
+        world,
+        known_rovers = rover_jids,
+        known_drones = drone_jids,
+        satellite_jid = satellite_jid
+    )
+    print("Initialized Base...")
 
-    await asyncio.sleep(60)
+    # Satellite knows bases
+    satellite = Satellite(
+        satellite_jid, "satellite",
+        world, world_map,
+        satellite_pos,
+        known_bases=[base_jid]
+    )
+    print("Initialized Satellite...")
 
-    print("\nSimulation complete — stopping agents...\n")
+    # Pair drones and rovers (1-to-1)
+    rovers = []
+    drones = []
+    for i, (r_pos, d_pos) in enumerate(zip(rover_positions, drone_positions), start=1):
+        rover_jid = f"rover{i}@{TAG}"
+        drone_jid = f"drone{i}@{TAG}"
 
-    await drone1.stop()
-    await rover1.stop()
-    await base.stop()
-    await satellite.stop()
+        # Create Rover
+        rover = Rover(
+            rover_jid, f"rover{i}",
+            r_pos, world,
+            assigned_drone=drone_jid,
+            base_jid=base_jid
+        )
+        rovers.append(rover)
 
-    print("All agents stopped successfully.")
+        # Create Drone
+        drone = Drone(
+            drone_jid, f"drone{i}",
+            d_pos, world, world_map,
+            assigned_rover=rover_jid
+        )
+        drones.append(drone)
+    print("Initialized Drones and Rovers...")
+
+    # --- START AGENTS ---
+    await base.setup()
+    await satellite.setup()
+
+    for rover in rovers:
+        await rover.setup()
+    for drone in drones:
+        await drone.setup()
+
+    print("[MAIN] All agents started and world initialized.")
+    await asyncio.sleep(600)
 
 if __name__ == "__main__":
     spade.run(main())
