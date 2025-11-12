@@ -35,6 +35,7 @@ class Rover(Agent):
         self.path: List[Tuple[float, float]] = []
         self.goal: Optional[Tuple[float, float]] = None
         self.status = "idle"
+        self.is_locked_by_bid = False
 
         self.move_step = move_step
         self.obstacle_radius = obstacle_radius
@@ -83,6 +84,47 @@ class Rover(Agent):
                 return candidate
         return None
 
+    def calculate_distance(self, pos1: Tuple[float, float], pos2: Tuple[float, float]) -> float:
+        return sqrt((pos1[0] - pos2[0]) ** 2 + (pos1[1] - pos2[1]) ** 2)
+
+    def calculate_pathfinding_cost(self, start_pos: Tuple[float, float], target_pos: Tuple[float, float]) -> float:
+            """
+            Slightly randomized Euclidean distance.
+            """
+            euclidean_dist = self.calculate_distance(start_pos, target_pos)
+            # Simulate complexity by making the pathfinding distance 10-30% longer than straight-line
+            return euclidean_dist * random.uniform(1.1, 1.3)
+
+    def compute_mission_time(self, target_pos: Tuple[float, float]) -> float:
+        current_energy = self.energy
+        
+        # 1. Calculate an approximation of the distance that the rover will have to go (2-way trip: Base -> Target -> Base)
+        # We use the base position as the starting point.
+        # We use eucledian distance for the approximation
+
+        dist_to_target = self.calculate_pathfinding_cost(self.position, target_pos)
+        dist_to_base_after = self.calculate_pathfinding_cost(target_pos, self.position)
+        total_distance = dist_to_target + dist_to_base_after
+
+        # 2. Calculate the energy required
+        energy_required = total_distance * ENERGY_PER_DISTANCE_UNIT
+        
+        # 3. Calculate Time Needed (The Bid Cost)
+        time_to_charge = 0.0
+
+        if current_energy < energy_required:
+            # Calculate time needed to charge the difference
+            energy_needed_to_charge = energy_required - current_energy
+            time_to_charge = energy_needed_to_charge / CHARGE_RATE_ENERGY_PER_SEC
+            
+        # Time to execute the mission (travel time)
+        time_to_travel = total_distance / ROVER_SPEED_UNIT_PER_SEC
+        
+        # The total mission time (cost) includes charge time and travel time
+        mission_time = time_to_charge + time_to_travel
+
+        return mission_time
+
     # -------------------------------------------------------------------------
     # BEHAVIOURS
     # -------------------------------------------------------------------------
@@ -97,6 +139,44 @@ class Rover(Agent):
             performative = msg.metadata.get("performative")
             ontology = msg.metadata.get("ontology")
             sender = str(msg.sender)
+
+            # --------------------------
+            # BASE → ROVER : Inform about internal stats
+            # --------------------------
+            if performative == "cfp" and ontology == "rover_bid_cfp":
+                target_pos = eval(msg.body)
+                print(f"[{rover.name}] Received Bid request from Base for {target_pos}")
+
+                # Check if rover is free
+                if rover.is_locked_by_bid or rover.status != "idle":
+                    # Already committed → refuse
+                    reply = Message(to=str(msg.sender))
+                    reply.set_metadata("performative", "refuse")
+                    reply.set_metadata("ontology", "rover_bid_cfp")
+                    reply.body = str({"reason": "busy or locked"})
+                    await rover.send(reply)
+                    print(f"[{rover.name}] REFUSING mission at {target_pos} (busy/locked)")
+                else:
+                    # Rover is available → propose
+                    rover.is_locked_by_bid = True  # lock it for this bid
+                    estimated_mission_time = rover.compute_mission_time(target_pos)
+                    proposal = {"cost": estimated_mission_time, "rover": str(rover.jid)}
+                    reply = Message(to=str(msg.sender))
+                    reply.set_metadata("performative", "propose")
+                    reply.set_metadata("ontology", "rover_bid_cfp")
+                    reply.body = str(proposal)
+                    await rover.send(reply)
+                    print(f"[{rover.name}] PROPOSING mission at {target_pos} with cost {estimated_mission_time:.2f}")
+
+            # Go to target
+            elif performative == "accept_proposal" and ontology == "rover_bid_cfp":
+                rover.status = "moving"
+                rover.goal = eval(msg.body)["target"]
+                print(f"[{rover.name}] ACCEPTED mission to {rover.goal}")
+
+            # Reject proposal → stay idle
+            elif performative == "reject_proposal" and ontology == "rover_bid_cfp":
+                print(f"[{rover.name}] REJECTED for mission at {eval(msg.body)['target']}")
 
             # --------------------------
             # DRONE → ROVER : Path to Goal
