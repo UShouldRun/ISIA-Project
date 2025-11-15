@@ -50,21 +50,7 @@ class Rover(Agent):
     # -------------------------------------------------------------------------
     # UTILITIES
     # -------------------------------------------------------------------------
-    async def send_msg(
-        self,
-        to: str,
-        performative: str,
-        ontology: str,
-        body: str,
-    ):
-        """Unified FIPA-compliant message sending."""
-        msg = Message(
-            to=to,
-            metadata={"performative": performative, "ontology": ontology},
-            body=body,
-        )
-        await self.send(msg)
-        print(f"[{self.name}] → {to} ({performative}/{ontology}): {body}")
+    # REMOVE send_msg method entirely - it doesn't work at agent level
 
     def get_dpos(self, curr: Tuple[float, float], goal: Tuple[float, float]) -> Tuple[int, int]:
         """Compute one-step delta toward goal."""
@@ -92,8 +78,8 @@ class Rover(Agent):
             Slightly randomized Euclidean distance.
             """
             euclidean_dist = self.calculate_distance(start_pos, target_pos)
-            # Simulate complexity by making the pathfinding distance 10-30% longer than straight-line
-            return euclidean_dist * random.uniform(1.1, 1.3)
+            # Simulate complexity by making the pathfinding distance 0-10% longer than straight-line
+            return euclidean_dist * random.uniform(1.0, 1.1)
 
     def compute_mission_time(self, target_pos: Tuple[float, float]) -> float:
         current_energy = self.energy
@@ -141,7 +127,7 @@ class Rover(Agent):
             sender = str(msg.sender)
 
             # --------------------------
-            # BASE → ROVER : Inform about internal stats
+            # BASE → ROVER : Bid Request
             # --------------------------
             if performative == "cfp" and ontology == "rover_bid_cfp":
                 target_pos = eval(msg.body)
@@ -150,32 +136,36 @@ class Rover(Agent):
                 # Check if rover is free
                 if rover.is_locked_by_bid or rover.status != "idle":
                     # Already committed → refuse
-                    reply = Message(to=str(msg.sender))
-                    reply.set_metadata("performative", "refuse")
-                    reply.set_metadata("ontology", "rover_bid_cfp")
-                    reply.body = str({"reason": "busy or locked"})
-                    await rover.send(reply)
+                    reply = Message(
+                        to=sender,
+                        metadata={"performative": "refuse", "ontology": "rover_bid_cfp"},
+                        body=str({"reason": "busy or locked"})
+                    )
+                    await self.send(reply)
                     print(f"[{rover.name}] REFUSING mission at {target_pos} (busy/locked)")
                 else:
                     # Rover is available → propose
                     rover.is_locked_by_bid = True  # lock it for this bid
                     estimated_mission_time = rover.compute_mission_time(target_pos)
                     proposal = {"cost": estimated_mission_time, "rover": str(rover.jid)}
-                    reply = Message(to=str(msg.sender))
-                    reply.set_metadata("performative", "propose")
-                    reply.set_metadata("ontology", "rover_bid_cfp")
-                    reply.body = str(proposal)
-                    await rover.send(reply)
+                    reply = Message(
+                        to=sender,
+                        metadata={"performative": "propose", "ontology": "rover_bid_cfp"},
+                        body=str(proposal)
+                    )
+                    await self.send(reply)
                     print(f"[{rover.name}] PROPOSING mission at {target_pos} with cost {estimated_mission_time:.2f}")
 
             # Go to target
             elif performative == "accept_proposal" and ontology == "rover_bid_cfp":
                 rover.status = "moving"
                 rover.goal = eval(msg.body)["target"]
+                rover.is_locked_by_bid = False  # Unlock after acceptance
                 print(f"[{rover.name}] ACCEPTED mission to {rover.goal}")
 
-            # Reject proposal → stay idle
+            # Reject proposal → unlock and stay idle
             elif performative == "reject_proposal" and ontology == "rover_bid_cfp":
+                rover.is_locked_by_bid = False  # Unlock the rover
                 print(f"[{rover.name}] REJECTED for mission at {eval(msg.body)['target']}")
 
             # --------------------------
@@ -209,7 +199,7 @@ class Rover(Agent):
             dx, dy = rover.get_dpos(rover.position, next_step)
             new_pos = (rover.position[0] + dx * rover.move_step, rover.position[1] + dy * rover.move_step)
 
-            if rover.world.collides(self.jid, new_pos):
+            if rover.world.collides(rover.jid, new_pos):
                 print(f"[{rover.name}] Collision detected near {new_pos}")
 
                 # Attempt local avoidance
@@ -220,12 +210,12 @@ class Rover(Agent):
                 else:
                     # Request reroute from drone
                     print(f"[{rover.name}] Could not avoid locally, requesting reroute.")
-                    await rover.send_msg(
+                    msg = Message(
                         to=rover.assigned_drone,
-                        performative="request",
-                        ontology="reroute",
-                        body=str({"current": rover.position, "goal": rover.goal}),
+                        metadata={"performative": "request", "ontology": "reroute"},
+                        body=str({"current": rover.position, "goal": rover.goal})
                     )
+                    await self.send(msg)
                     rover.status = "waiting"
                     return
             else:
@@ -241,34 +231,34 @@ class Rover(Agent):
                     if rover.status == "moving":
                         rover.status = "arrived"
                         print(f"[{rover.name}] Arrived at mission goal {rover.goal}")
-                        await rover.send_msg(
+                        msg = Message(
                             to=rover.base_jid,
-                            performative="inform",
-                            ontology="mission_complete",
-                            body=str({"position": rover.position}),
+                            metadata={"performative": "inform", "ontology": "mission_complete"},
+                            body=str({"position": rover.position})
                         )
+                        await self.send(msg)
 
                         # Trigger soil analysis after mission
                         rover.add_behaviour(rover.AnalyzeSoil())
 
                         # Request path back to base
-                        await rover.send_msg(
+                        msg = Message(
                             to=rover.assigned_drone,
-                            performative="request",
-                            ontology="return_path",
-                            body=str({"current": rover.position, "base": rover.base_jid}),
+                            metadata={"performative": "request", "ontology": "return_path"},
+                            body=str({"current": rover.position, "base": rover.base_jid})
                         )
+                        await self.send(msg)
                         rover.status = "waiting_return"
 
                     elif rover.status == "returning":
                         rover.status = "idle"
                         print(f"[{rover.name}] Returned to base successfully at {rover.position}")
-                        await rover.send_msg(
+                        msg = Message(
                             to=rover.base_jid,
-                            performative="inform",
-                            ontology="returned_to_base",
-                            body=str({"position": rover.position}),
+                            metadata={"performative": "inform", "ontology": "returned_to_base"},
+                            body=str({"position": rover.position})
                         )
+                        await self.send(msg)
 
             await asyncio.sleep(2)
 
@@ -285,12 +275,12 @@ class Rover(Agent):
                     found_resources.append(resource)
 
             if found_resources:
-                await rover.send_msg(
+                msg = Message(
                     to=rover.base_jid,
-                    performative="inform",
-                    ontology="resources_found",
-                    body=str({"position": rover.position, "resources": found_resources}),
+                    metadata={"performative": "inform", "ontology": "resources_found"},
+                    body=str({"position": rover.position, "resources": found_resources})
                 )
+                await self.send(msg)
                 print(f"[{rover.name}] Resources found at {rover.position}: {found_resources}")
             else:
                 print(f"[{rover.name}] No resources found at {rover.position}.")
@@ -302,6 +292,7 @@ class Rover(Agent):
     # SETUP
     # -------------------------------------------------------------------------
     async def setup(self):
-        print(f"[{self.name}] Rover initialized at {self.position}, waiting for path.")
+        print(f"Initializing [{self.name}] rover.")
         self.add_behaviour(self.ReceiveMessages())
         self.add_behaviour(self.MoveAlongPath())
+        print(f"[{self.name}] Rover initialized at {self.position}, waiting for path.")

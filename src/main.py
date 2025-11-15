@@ -2,6 +2,12 @@ import random
 import asyncio
 import spade
 
+import logging
+# Set the logging level to DEBUG for SPADE's core components
+logging.basicConfig(level=logging.INFO) # Start with INFO
+logging.getLogger("spade.xmpp").setLevel(logging.DEBUG) 
+logging.getLogger("spade.agent").setLevel(logging.DEBUG)
+
 from world.setting import TAG
 from world.world import World, WorldObject
 from world.map import Map
@@ -62,8 +68,11 @@ async def main():
 
     # Base knows all other agents
     base = Base(
-        base_jid, "base",
-        base_center
+        base_jid,
+        "base",
+        base_center,
+        rover_jids,
+        drone_jids
     )
     print("Initialized Base...")
 
@@ -102,16 +111,23 @@ async def main():
     print("Initialized Drones and Rovers...")
 
     # --- START AGENTS ---
-    await base.setup()
-    await satellite.setup()
 
-    for rover in rovers:
-        await rover.setup()
-    for drone in drones:
-        await drone.setup()
+    agents_to_start = rovers + drones + [base, satellite]
+    started_agents = []
+
+    for agent in agents_to_start:
+        print(f"[MAIN] Starting {agent.name} agent...")
+        
+        future = agent.start()
+        await future
+        
+        print(f"[MAIN] {agent.name} agent started.")
+        started_agents.append(agent)
 
     print("[MAIN] All agents started and world initialized.")
+
     await asyncio.sleep(600)
 
 if __name__ == "__main__":
+    print(f"Connecting to domain: {TAG}")
     spade.run(main())

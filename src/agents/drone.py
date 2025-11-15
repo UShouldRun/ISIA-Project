@@ -154,5 +154,6 @@ class Drone(Agent):
     # SETUP
     # -------------------------------------------------------------------------
     async def setup(self):
-        print(f"[{self.name}] Drone initialized at {self.position}, waiting for missions.")
+        print(f"Initializing [{self.name}] drone.")
         self.add_behaviour(self.DroneControl())
+        print(f"[{self.name}] Drone initialized at {self.position}, waiting for missions.")

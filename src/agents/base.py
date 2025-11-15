@@ -18,79 +18,19 @@ class Base(Agent):
         self,
         jid: str,
         password: str,
-        position: Tuple[float, float] = [0, 0]
+        position: Tuple[float, float] = [0, 0],
+        rover_jids: List[str] = [],
+        drones_jids: List[str] = []
     ) -> None:
         super().__init__(jid, password)
         self.position = tuple(position)
         # This list is from rovers and drones that are currently on the base.
         # When the agent levaes the base, we lose information ab out it and remove it from the list
-        self.rovers = ["rover1@planet.local", "rover2@planet.local"]  # List of rover JIDs that are on the base in this moment
-        self.drones = ["drone1@planet.local", "drone2@planet.local"]  # List of drone JIDs that are on the base in this moment
-        self.resources = []                 # List of detected resources
-        self.pending_missions = []          # Queue of locations to explore
-
-    # -------------------------------------------------------------------------
-    # UTILITIES
-    # -------------------------------------------------------------------------
-
-    def find_available_rover(self, target_pos: Tuple[float, float]) -> Tuple[str, float, float] | None:
-        """
-        Finds the best available rover (ON the base)
-        and estimates the minimum mission time (charge + travel).
-        """
-
-        best_rover_jid = None
-        min_mission_time = float('inf')
-        
-        # Filter: Only rovers NOT locked to a prior bid (as they are all assumed to be at the base)
-        standby_rovers = {
-            jid: info for jid, info in self.rovers.items()
-            if info.get("locked_mission") is None
-        }
-
-        if not standby_rovers:
-            return None # No rovers on standby (at base)
-
-        # rover_pos is now assumed to be self.position for all rovers in standby_rovers
-        rover_pos = self.position 
-
-        for jid, info in standby_rovers.items():
-            current_energy = info["energy"]
-
-        if best_rover_jid:
-            return best_rover_jid, min_mission_time, energy_required 
-        return None
-
-    async def send_message(self, to: str, msg_type: str, body: str):
-        """Communication for all outgoing Base messages."""
-        msg = Message(to=to, metadata={"type": msg_type}, body=body)
-        await self.send(msg)
-        print(f"[{self.name}] → Sent to {to}: ({perf}) {body}")
-
-    def distance(self, p1: Tuple[float, float], p2: Tuple[float, float]) -> float:
-        return sqrt((p1[0] - p2[0]) ** 2 + (p1[1] - p2[1]) ** 2)
-
-    def select_drone(self) -> Optional[str]:
-        """Pop next available drone (FIFO)."""
-        if not self.drones_queue:
-            return None
-        return self.drones_queue.popleft()
-
-    def select_rover(self) -> Optional[str]:
-        """Pop next available rover (FIFO)."""
-        if not self.rovers_queue:
-            return None
-        return self.rovers_queue.popleft()
-
-    def mark_drone_available(self, jid: str):
-        """Return a drone to the queue after mission completion."""
-        if jid not in self.drones_queue:
-            self.drones_queue.append(jid)
-
-    def mark_rover_available(self, jid: str):
-        """Return a rover to the queue after mission completion."""
-        if jid not in self.rovers_queue:
-            self.rovers_queue.append(jid)
+        self.rovers = rover_jids   # List of rover JIDs that are on the base in this moment
+        self.drones = drones_jids  # List of drone JIDs that are on the base in this moment
+        self.resources = []        # List of detected resources
+        self.pending_missions = [] # Queue of locations to explore
+        self.proposals = {}
 
     # -------------------------------------------------------------------------
     # BEHAVIOURS
@@ -99,17 +39,15 @@ class Base(Agent):
         """
         Implements the Initiator role in the FIPA Contract Net Protocol
         """
-        def __init__(self, target_position: Tuple[float, float], rover_jids: List[str]):
-            super().__init__(self.agent.rovers) # Targets all rovers in self.agent.rovers
+        def __init__(self, target_position: Tuple[float, float]):
+            super().__init__()
             self.target_position = target_position
-            self.rover_jids = rover_jids
-            self.proposals: Dict[str, Dict] = {}
             
         async def run(self):
             """
                 Send CFP to all rovers
             """
-            for rover_jid in self.rover_jids:
+            for rover_jid in self.agent.rovers:
                 msg = Message(to=rover_jid)
                 msg.set_metadata("performative", "cfp")
                 msg.set_metadata("ontology", "rover_bid_cfp")
@@ -120,9 +58,11 @@ class Base(Agent):
             timeout = 5  # seconds to wait for bids
 
             start_time = asyncio.get_event_loop().time()
+            replies = []
 
             while asyncio.get_event_loop().time() - start_time < timeout:
                 msg = await self.receive(timeout=1)
+                replies.append(msg)
                 if msg:
                     perf = msg.metadata.get("performative")
                     if perf == "propose":
@@ -134,7 +74,7 @@ class Base(Agent):
                     elif perf == "failure":
                         self.on_failure(msg)
     
-            await self.on_all_responses_received()
+            await self.on_all_responses_received(replies)
 
         def on_failure(self, message: Message):
             """Called if a rover fails during the negotiation."""
@@ -143,6 +83,10 @@ class Base(Agent):
         def on_not_understood(self, message: Message):
             """Called if a rover doesn't understand the CFP."""
             print(f"[{self.agent.name}] Base {message.sender} did not understand the CFP.")
+
+        def on_refuse(self, message: Message):
+            """Called when a rover refuses to bid."""
+            print(f"[{self.agent.name}] Rover {message.sender} refused to bid for mission at {self.target_position}")
 
         async def on_propose(self, message: Message):
             """
@@ -167,7 +111,6 @@ class Base(Agent):
             except (SyntaxError, TypeError, ValueError):
                 print(f"[{self.agent.name}] Invalid proposal format from {message.sender}. Body: {message.body}")
 
-
         async def on_all_responses_received(self, replies: List[Message]):
             """
             Called when all expected replies (proposes or refuses) are received,
@@ -175,7 +118,7 @@ class Base(Agent):
             """
             print(f"[{self.agent.name}] All responses received for mission at {self.target_position}. Total replies: {len(replies)}")
 
-            if not self.proposals:
+            if not self.agent.proposals:
                 print(f"[{self.agent.name}] No proposals received for mission at {self.target_position}")
                 return
 
@@ -184,8 +127,8 @@ class Base(Agent):
             and estimates the minimum mission time (charge + travel).
             """
 
-            best_sender, best_data = min(self.proposals.items(), key=lambda x: x[1]["bid"]["cost"])
-            best_bid = best_data["bid"]
+            best_sender, best_data = min(self.agent.proposals.items(), key=lambda x: x[1]["cost"])
+            best_bid = best_data
             print(f"[{self.agent.name}] Accepting proposal from {best_sender} with cost {best_bid['cost']}")
             
             # Accept the winner
@@ -196,7 +139,7 @@ class Base(Agent):
             await self.send(accept_msg)
 
             # Reject all other proposals
-            for sender, data in self.proposals.items():
+            for sender, data in self.agent.proposals.items():
                 if sender != best_sender:
                     reject_msg = Message(to=sender)
                     reject_msg.set_metadata("performative", "reject_proposal")
@@ -222,10 +165,7 @@ class Base(Agent):
                 if performative == "cfp" and msg_type == "rover_mission_cfp":
                     target_pos = eval(msg.body)
                     print(f"[{base.name}] Received mission CFP from {sender} for target {target_pos}")
-                    
-                    rover_jids = list(base.rovers)
-                    behaviour = self.RequestRoverForBid(target_pos, rover_jids)
-                    base.add_behaviour(behaviour)
+                    base.add_behaviour(self.agent.RequestRoverForBid(target_pos))
 
             await asyncio.sleep(1)
 
@@ -248,5 +188,3 @@ class Base(Agent):
     async def setup(self):
         print(f"[{self.name}] Base operational at position {self.position}")
         self.add_behaviour(self.ReceiveMessages())
-        self.add_behaviour(self.MissionResponder())
-        self.add_behaviour(self.RequestRoverForBid())
