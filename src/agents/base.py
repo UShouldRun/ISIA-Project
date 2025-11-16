@@ -19,15 +19,13 @@ class Base(Agent):
         jid: str,
         password: str,
         position: Tuple[float, float] = [0, 0],
-        rover_jids: List[str] = [],
-        drones_jids: List[str] = []
+        rover_jids: List[str] = []
     ) -> None:
         super().__init__(jid, password)
         self.position = tuple(position)
         # This list is from rovers and drones that are currently on the base.
         # When the agent levaes the base, we lose information ab out it and remove it from the list
         self.rovers = rover_jids   # List of rover JIDs that are on the base in this moment
-        self.drones = drones_jids  # List of drone JIDs that are on the base in this moment
         self.resources = []        # List of detected resources
         self.pending_missions = [] # Queue of locations to explore
         self.proposals = {}
@@ -58,11 +56,10 @@ class Base(Agent):
             timeout = 1  # seconds to wait for bids
 
             start_time = asyncio.get_event_loop().time()
-            replies = []
 
             while asyncio.get_event_loop().time() - start_time < timeout:
                 msg = await self.receive(timeout=1)
-                replies.append(msg)
+
                 if msg:
                     perf = msg.metadata.get("performative")
                     if perf == "propose":
@@ -74,7 +71,7 @@ class Base(Agent):
                     elif perf == "failure":
                         self.on_failure(msg)
     
-            await self.on_all_responses_received(replies)
+            await self.on_all_responses_received()
 
         def on_failure(self, message: Message):
             """Called if a rover fails during the negotiation."""
@@ -111,12 +108,12 @@ class Base(Agent):
             except (SyntaxError, TypeError, ValueError):
                 print(f"[{self.agent.name}] Invalid proposal format from {message.sender}. Body: {message.body}")
 
-        async def on_all_responses_received(self, replies: List[Message]):
+        async def on_all_responses_received(self):
             """
             Called when all expected replies (proposes or refuses) are received,
             or the timeout has expired.
             """
-            print(f"[{self.agent.name}] All responses received for mission at {self.target_position}. Total replies: {len(replies)}")
+            print(f"[{self.agent.name}] All responses received for mission at {self.target_position}.")
 
             if not self.agent.proposals:
                 print(f"[{self.agent.name}] No proposals received for mission at {self.target_position}")
@@ -130,8 +127,8 @@ class Base(Agent):
             best_sender, best_data = min(self.agent.proposals.items(), key=lambda x: x[1]["cost"])
             best_bid = best_data
             
-            # Send the winner bid to the satelite and wait for further communication
-            accept_msg = Message(to="satellite@localhost")
+            # Send the winner bid to the drone and wait for further communication
+            accept_msg = Message(to="drone@localhost")
             accept_msg.set_metadata("performative", "propose")
             accept_msg.set_metadata("ontology", "rover_bid_cfp")
             accept_msg.body = str({"target": self.target_position, "base": str(self.agent.jid), "rover": str(best_sender), "cost": best_bid['cost']})

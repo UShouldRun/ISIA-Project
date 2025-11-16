@@ -1,15 +1,14 @@
-import spade
 import asyncio
 import random
-from math import sqrt
-from typing import Tuple, List, Dict, Optional
+
+from typing import Dict, Tuple, List
 
 from spade.agent import Agent
-from spade.behaviour import CyclicBehaviour
+from spade.behaviour import CyclicBehaviour, OneShotBehaviour, State
 from spade.message import Message
 
-from world.map import Map, AStar
-from world.world import World
+from world.world import World, WorldObject
+from world.map import Map
 
 class Drone(Agent):
     def __init__(
@@ -17,143 +16,226 @@ class Drone(Agent):
         jid: str,
         password: str,
         world: World,
-        map: Map,
-        base_position: Tuple[float, float],
-        assigned_rover: str,
-        move_step: float = 10.0,
-        energy_consump_rate: float = 0.5,
+        map_: Map,
+        position: Tuple[float, float],
+        known_bases: List[str],
+        orbit_height: float = 1000.0,
+        scan_radius: float = 500.0
     ) -> None:
         super().__init__(jid, password)
         self.world = world
-        self.map = map
-        self.position = base_position
-        self.base_position = base_position
-        self.assigned_rover = assigned_rover
-        self.move_step = move_step
-        self.energy_consump_rate = energy_consump_rate
+        self.map = map_
+        self.position = position
 
-        self.energy = 100
-        self.status = "idle"
-        self.goal: Optional[Tuple[float, float]] = None
+        self.orbit_height = orbit_height
+        self.scan_radius = scan_radius
+        self.bases = known_bases
+        self.scanned_areas = []  # Areas already scanned
+        self.areas_of_interest = []  # Detected areas that need exploration
+        self.current_scan_position = [0, 0]
+        # Dictionary to hold proposals during Contract Net negotiation
+        self.proposals: Dict[str, Dict] = {}
 
-    # -------------------------------------------------------------------------
-    # UTILITIES
-    # -------------------------------------------------------------------------
-    async def send_msg(self, to: str, performative: str, ontology: str, body: str):
-        msg = Message(
-            to=to,
-            metadata={"performative": performative, "ontology": ontology},
-            body=body,
-        )
-        await self.send(msg)
-        print(f"[{self.name}] → {to} ({performative}/{ontology}): {body}")
-
-    def energy_limit(self, curr_pos: Tuple[float, float]) -> int:
-        """Minimum energy needed to return to base."""
-        bx, by = self.base_position
-        return int(self.energy_consump_rate * sqrt((curr_pos[0] - bx) ** 2 + (curr_pos[1] - by) ** 2))
-
-    def get_dpos(self, curr: Tuple[float, float], goal: Tuple[float, float]) -> Tuple[int, int]:
-        """Compute a one-step delta towards the goal."""
-        return (
-            1 if curr[0] < goal[0] else -1 if curr[0] > goal[0] else 0,
-            1 if curr[1] < goal[1] else -1 if curr[1] > goal[1] else 0,
-        )
-
-    async def try_go_around(self, goal: Tuple[float, float]) -> Optional[Tuple[float, float]]:
-        """Try a simple local detour around an obstacle."""
-        for _ in range(5):
-            offset_x = random.uniform(-15, 15)
-            offset_y = random.uniform(-15, 15)
-            candidate = (self.position[0] + offset_x, self.position[1] + offset_y)
-            if not self.world.collides(self.jid, candidate):
-                print(f"[{self.name}] Avoiding obstacle → {candidate}")
-                return candidate
-        return None
+        self.scanned_areas: List[Tuple[float, float]] = []
+        self.areas_of_interest: List[Tuple[float, float]] = []
+        self.current_scan_position = list(self.position)
 
     # -------------------------------------------------------------------------
     # BEHAVIOURS
     # -------------------------------------------------------------------------
-    class DroneControl(CyclicBehaviour):
+    class ScanTerrain(CyclicBehaviour):
+        async def on_start(self):
+            print(f"[{self.agent.name}] Starting terrain scanning...")
+
+        # Simulate detection of area of interest (5% chance)
+        def is_area_of_interest(self) -> bool:
+            return random.random() < 0.25
+
         async def run(self):
             drone = self.agent
-            msg = await self.receive(timeout=5)
-            if not msg:
-                await asyncio.sleep(1)
+
+            # Move scanning window
+            drone.current_scan_position[0] += 100
+            if drone.current_scan_position[0] > drone.map.length:
+                drone.current_scan_position[0] = 0
+                drone.current_scan_position[1] += 100
+
+            if drone.current_scan_position[1] > drone.map.height:
+                drone.current_scan_position[1] = 0
+
+            scan_pos = tuple(drone.current_scan_position)
+
+            if scan_pos not in drone.scanned_areas:
+                drone.scanned_areas.append(scan_pos)
+                print(f"[{drone.name}] Scanning area: {scan_pos}")
+                
+                if self.is_area_of_interest():
+                    drone.areas_of_interest.append(scan_pos)
+                    print(f"[{drone.name}] Area of interest detected at {scan_pos}")
+                    
+                    # Request mission x
+                    drone.add_behaviour(drone.RequestAgentForMission(scan_pos))
+
+                    await asyncio.sleep(10)
+
+    # Start a FIPA contract-net protocol with all the bases 
+    # Get the bids from the bases
+    # Choose the bid that has the lowest time from the base to the objective
+    ## This time can be the time to let a rover charge to be fully ready for the mission
+    # Assign mission to base (pass it the mission along with the agent id in the bid)
+    class RequestAgentForMission(OneShotBehaviour):
+        """
+        Implements the Initiator role in the FIPA Contract Net Protocol
+        """
+        def __init__(self, target_position: Tuple[float, float]):
+            super().__init__() # Targets all agents in self.agent.bases
+            self.target_position = target_position
+
+        async def run(self):
+            """
+                Send CFP to all bases
+            """
+            for base_jid in self.agent.bases:
+                msg = Message(to=base_jid)
+                msg.set_metadata("performative", "cfp")
+                msg.set_metadata("type", "rover_mission_cfp")
+                msg.body = str(self.target_position)
+                await self.send(msg)
+                print(f"[{self.agent.name}] CFP sent to {base_jid} for mission at {self.target_position}")
+
+            timeout = 4  # seconds to wait for bids
+
+            start_time = asyncio.get_event_loop().time()
+            replies = []
+
+            while asyncio.get_event_loop().time() - start_time < timeout:
+                msg = await self.receive(timeout=1)
+                replies.append(msg)
+                if msg:
+                    perf = msg.metadata.get("performative")
+                    if perf == "propose":
+                        await self.on_propose(msg)
+                    elif perf == "refuse":
+                        self.on_refuse(msg)
+                    elif perf == "not-understood":
+                        self.on_not_understood(msg)
+                    elif perf == "failure":
+                        self.on_failure(msg)
+
+            await self.on_all_responses_received(replies)
+            
+        def on_refuse(self, message: Message):
+            """Called when a base refuses to bid."""
+            print(f"[{self.agent.name}] Base {message.sender} refused to bid for mission at {self.target_position}")
+
+        def on_failure(self, message: Message):
+            """Called if a base fails during the negotiation."""
+            print(f"[{self.agent.name}] Base {message.sender} failed during the contract net protocol.")
+
+        def on_not_understood(self, message: Message):
+            """Called if a base doesn't understand the CFP."""
+            print(f"[{self.agent.name}] Base {message.sender} did not understand the CFP.")
+
+        async def on_propose(self, message: Message):
+            """
+            Called when a base sends a proposal (a bid).
+            The bid should contain the cost for the mission (Time to be ready/reach target).
+            """
+            try:
+                # The bid should be: {"cost": 5.5, "base": "base_id", "rover": "rover_id"}
+                bid_data = eval(message.body)
+                cost = float(bid_data.get("cost", float('inf'))) # Time to be ready/reach target
+                base_jid = bid_data.get("base")
+                rover_jid = bid_data.get("rover")
+                
+                print(f"[{self.agent.name}] Received PROPOSAL from base: {base_jid}: Cost={cost}, Rover={rover_jid}")
+                                
+                # Store the valid bid
+                if base_jid is not None and rover_jid is not None:
+                    # Storing bid data along with the sender JID
+                    self.agent.proposals[base_jid] = {"cost": cost, "base": base_jid, "rover": rover_jid, "proposal_msg": message}
+                else:
+                    print(f"[{self.agent.name}] Ignoring invalid proposal from {message.sender}: No 'rover' specified.")
+            
+            except (SyntaxError, TypeError, ValueError):
+                print(f"[{self.agent.name}] Invalid proposal format from {message.sender}. Body: {message.body}")
+
+
+        async def on_all_responses_received(self, replies: List[Message]):
+            """
+            Called when all expected replies (proposes or refuses) are received,
+            or the timeout has expired.
+            """
+            print(f"[{self.agent.name}] All responses received for mission at {self.target_position}. Total replies: {len(replies)}")
+
+            if not self.agent.proposals:
+                print(f"[{self.agent.name}] No proposals received for mission at {self.target_position}. Retrying later.")
+                # Clear proposals for the next negotiation
+                self.agent.proposals = {} 
                 return
 
-            performative = msg.metadata.get("performative")
-            ontology = msg.metadata.get("ontology")
-            sender = str(msg.sender)
+            best_base, best_data = min(self.agent.proposals.items(), key=lambda x: x[1]["cost"])           
+            min_cost = best_data['cost']
 
-            # ---------------------------------------------------------
-            # BASE → DRONE : mission request
-            # ---------------------------------------------------------
-            if performative == "request" and ontology == "assign_goal":
-                data = eval(msg.body)
-                goal = tuple(data["goal"])
-                print(f"[{drone.name}] Received mission: navigate rover to {goal}")
+            if best_base:
+                # ACCEPT the best proposal
+                print(f"[{self.agent.name}] Accepting proposal from {best_base} with cost {min_cost}")
 
-                path = AStar.run(drone.map, start=drone.position, goal=goal)
-                if path:
-                    await drone.send_msg(
-                        to=drone.assigned_rover,
-                        performative="inform",
-                        ontology="path_to_goal",
-                        body=str(path),
-                    )
-                    drone.status = "assisting"
-                else:
-                    print(f"[{drone.name}] Could not find path to goal {goal}")
+                # Send the winner bid to the satelite and wait for further communication
+                accept_msg = Message(to=best_base)
+                accept_msg.set_metadata("performative", "accept_proposal")
+                accept_msg.set_metadata("type", "rover_bid_accepted")
+                accept_msg.body = str({"target": self.target_position, "rover": best_data["rover"]})
 
-            # ---------------------------------------------------------
-            # ROVER → DRONE : reroute request
-            # ---------------------------------------------------------
-            elif performative == "request" and ontology == "reroute":
-                data = eval(msg.body)
-                curr = tuple(data["current"])
-                goal = tuple(data["goal"])
-                print(f"[{drone.name}] Reroute requested by {sender} → from {curr} to {goal}")
+                await self.send(accept_msg)
 
-                path = AStar.run(drone.map, start=curr, goal=goal)
-                if path:
-                    await drone.send_msg(
-                        to=sender,
-                        performative="inform",
-                        ontology="path_to_goal",
-                        body=str(path),
-                    )
-                    print(f"[{drone.name}] Sent new reroute path to {sender}")
-                else:
-                    print(f"[{drone.name}] Could not compute reroute path from {curr} to {goal}")
+                # REJECT all other proposals
+                for base_jid, data in self.agent.proposals.items():
+                    if base_jid != best_base:
+                        print(f"[{self.agent.name}] Rejecting proposal from {base_jid}")
+                        reject_msg = Message(to=base_jid)
+                        reject_msg.set_metadata("performative", "reject_proposal")
+                        reject_msg.set_metadata("type", "rover_bid_rejected")
+                        reject_msg.body = str({"target": self.target_position, "rover": data["rover"]})
 
-            # ---------------------------------------------------------
-            # ROVER → DRONE : request return path to base
-            # ---------------------------------------------------------
-            elif performative == "request" and ontology == "return_path":
-                data = eval(msg.body)
-                curr = tuple(data["current"])
-                base = drone.base_position
-                print(f"[{drone.name}] Return-to-base path requested from {curr}")
+                        await self.send(reject_msg)
+            else:
+                print(f"[{self.agent.name}] No suitable proposals received for mission at {self.target_position}. Retrying later.")
 
-                path = AStar.run(drone.map, start=curr, goal=base)
-                if path:
-                    await drone.send_msg(
-                        to=sender,
-                        performative="inform",
-                        ontology="return_path_to_base",
-                        body=str(path),
-                    )
-                    print(f"[{drone.name}] Sent return path to base for {sender}")
-                else:
-                    print(f"[{drone.name}] Could not compute return path from {curr} to {base}")
+            # Clear proposals for the next negotiation
+            self.agent.proposals = {}
 
-            await asyncio.sleep(1)
 
-    # -------------------------------------------------------------------------
-    # SETUP
-    # -------------------------------------------------------------------------
+        async def on_inform(self, message: Message):
+            """
+            Called when the winning base sends an INFORM,
+            to confirm the mission has been successfully taken on 
+            or completed (depending on protocol stage).
+            For this setup, it's used to confirm the rover assignment.
+            """
+            sender = str(message.sender)
+            print(f"[{self.agent.name}] Received INFORM from winning base {sender}.")
+
+            # The base is expected to send an INFORM back to the drone
+            # with the final rover assignment details.
+            pass
+
+    # class ReceiveMessages(CyclicBehaviour):
+        # async def run(self):
+            # drone = self.agent
+            # msg = await self.receive(timeout=5)
+
+            #if msg:
+                # performative = msg.metadata.get("performative")
+                # ontology = msg.metadata.get("ontology")
+                # sender = str(msg.sender).split("@")[0]
+                
+                # print(f"[{drone.name}] Message received from {sender} (type: )")
+
+            # await asyncio.sleep(1)
+
     async def setup(self):
         print(f"Initializing [{self.name}] drone.")
-        self.add_behaviour(self.DroneControl())
-        print(f"[{self.name}] Drone initialized at {self.position}, waiting for missions.")
+        self.add_behaviour(self.ScanTerrain())
+        # self.add_behaviour(self.ReceiveMessages())
+        print(f"[{self.name}] Drone online at orbit height {self.orbit_height} km")

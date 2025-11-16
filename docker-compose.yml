@@ -1,18 +1,4 @@
 services:
-  ejabberd:
-    image: ejabberd/ecs
-    container_name: ejabberd
-    environment:
-      - EJABBERD_DOMAIN=ejabberd
-    ports:
-      - "5222:5222"     # XMPP port
-      - "5280:5280"     # Web admin UI
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "bin/ejabberdctl", "status"]
-      interval: 5s
-      retries: 10
-
   spade_server:
     image: ${IMAGE_NAME}
     container_name: ${CONTAINER_NAME}
@@ -20,12 +6,9 @@ services:
       - ./.env
     environment:
       - SPADE_ADMIN_PORT=${SPADE_ADMIN_PORT}
-      - TAG=ejabberd
     ports:
       - "${SPADE_ADMIN_PORT}:${SPADE_ADMIN_PORT}"
     volumes:
       - ./src:/app/src
-    depends_on:
-      ejabberd:
-        condition: service_healthy
+      - ./sims:/app/sims
     restart: unless-stopped
