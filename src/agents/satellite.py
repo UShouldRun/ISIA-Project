@@ -86,22 +86,8 @@ class Satellite(Agent):
                     
                     # Request mission x
                     satellite.add_behaviour(satellite.RequestAgentForMission(scan_pos))
-            
-            await asyncio.sleep(3)
 
-    class ReceiveMessages(CyclicBehaviour):
-        async def run(self):
-            satellite = self.agent
-            msg = await self.receive(timeout=5)
-
-            if msg:
-                performative = msg.metadata.get("performative")
-                ontology = msg.metadata.get("ontology")
-                sender = str(msg.sender).split("@")[0]
-                
-                print(f"[{satellite.name}] Message received from {sender} (type: )")
-
-            await asyncio.sleep(1)
+                    await asyncio.sleep(10)
 
     # Start a FIPA contract-net protocol with all the bases 
     # Get the bids from the bases
@@ -128,12 +114,14 @@ class Satellite(Agent):
                 await self.send(msg)
                 print(f"[{self.agent.name}] CFP sent to {base_jid} for mission at {self.target_position}")
 
-            timeout = 10  # seconds to wait for bids
+            timeout = 4  # seconds to wait for bids
+
             start_time = asyncio.get_event_loop().time()
             replies = []
 
             while asyncio.get_event_loop().time() - start_time < timeout:
                 msg = await self.receive(timeout=1)
+                replies.append(msg)
                 if msg:
                     perf = msg.metadata.get("performative")
                     if perf == "propose":
@@ -162,20 +150,21 @@ class Satellite(Agent):
         async def on_propose(self, message: Message):
             """
             Called when a base sends a proposal (a bid).
-            The bid should contain the estimated time (cost) for the mission.
+            The bid should contain the cost for the mission (Time to be ready/reach target).
             """
             try:
-                # The bid should be: {"cost": 5.5, "rover": "rover_id"}
+                # The bid should be: {"cost": 5.5, "base": "base_id", "rover": "rover_id"}
                 bid_data = eval(message.body)
                 cost = float(bid_data.get("cost", float('inf'))) # Time to be ready/reach target
+                base_jid = bid_data.get("base")
                 rover_jid = bid_data.get("rover")
                 
-                print(f"[{self.agent.name}] Received PROPOSAL from {message.sender}: Cost={cost}, Rover={rover_jid}")
-                
+                print(f"[{self.agent.name}] Received PROPOSAL from base: {base_jid}: Cost={cost}, Rover={rover_jid}")
+                                
                 # Store the valid bid
-                if rover_jid is not None:
+                if base_jid is not None and rover_jid is not None:
                     # Storing bid data along with the sender JID
-                    self.agent.proposals[str(message.sender)] = {"cost": cost, "rover": rover_jid, "proposal_msg": message}
+                    self.agent.proposals[base_jid] = {"cost": cost, "base": base_jid, "rover": rover_jid, "proposal_msg": message}
                 else:
                     print(f"[{self.agent.name}] Ignoring invalid proposal from {message.sender}: No 'rover' specified.")
             
@@ -189,32 +178,38 @@ class Satellite(Agent):
             or the timeout has expired.
             """
             print(f"[{self.agent.name}] All responses received for mission at {self.target_position}. Total replies: {len(replies)}")
-            
-            best_base = None
-            min_cost = float('inf')
-            
-            # Find the best proposal (lowest cost/time)
-            for base_jid, data in self.agent.proposals.items():
-                if data["cost"] < min_cost:
-                    min_cost = data["cost"]
-                    best_base = base_jid
+
+            if not self.agent.proposals:
+                print(f"[{self.agent.name}] No proposals received for mission at {self.target_position}. Retrying later.")
+                # Clear proposals for the next negotiation
+                self.agent.proposals = {} 
+                return
+
+            best_base, best_data = min(self.agent.proposals.items(), key=lambda x: x[1]["cost"])           
+            min_cost = best_data['cost']
 
             if best_base:
-                # 1. ACCEPT the best proposal
+                # ACCEPT the best proposal
                 print(f"[{self.agent.name}] Accepting proposal from {best_base} with cost {min_cost}")
-                accept_msg = self.agent.proposals[best_base]["proposal_msg"]
-                
-                # The FIPANetInitiator will handle creating the ACCEPT_PROPOSAL message 
-                # based on the original proposal message.
-                await self.send_accept_proposal(accept_msg)
 
-                # 2. REJECT all other proposals
+                # Send the winner bid to the satelite and wait for further communication
+                accept_msg = Message(to=best_base)
+                accept_msg.set_metadata("performative", "accept_proposal")
+                accept_msg.set_metadata("type", "rover_bid_accepted")
+                accept_msg.body = str({"target": self.target_position, "rover": best_data["rover"]})
+
+                await self.send(accept_msg)
+
+                # REJECT all other proposals
                 for base_jid, data in self.agent.proposals.items():
                     if base_jid != best_base:
                         print(f"[{self.agent.name}] Rejecting proposal from {base_jid}")
-                        reject_msg = data["proposal_msg"]
-                        # The FIPANetInitiator will handle creating the REJECT_PROPOSAL message
-                        await self.send_reject_proposal(reject_msg)
+                        reject_msg = Message(to=base_jid)
+                        reject_msg.set_metadata("performative", "reject_proposal")
+                        reject_msg.set_metadata("type", "rover_bid_rejected")
+                        reject_msg.body = str({"target": self.target_position, "rover": data["rover"]})
+
+                        await self.send(reject_msg)
             else:
                 print(f"[{self.agent.name}] No suitable proposals received for mission at {self.target_position}. Retrying later.")
 
@@ -236,8 +231,22 @@ class Satellite(Agent):
             # with the final rover assignment details.
             pass
 
+    # class ReceiveMessages(CyclicBehaviour):
+        # async def run(self):
+            # satellite = self.agent
+            # msg = await self.receive(timeout=5)
+
+            #if msg:
+                # performative = msg.metadata.get("performative")
+                # ontology = msg.metadata.get("ontology")
+                # sender = str(msg.sender).split("@")[0]
+                
+                # print(f"[{satellite.name}] Message received from {sender} (type: )")
+
+            # await asyncio.sleep(1)
+
     async def setup(self):
         print(f"Initializing [{self.name}] satellite.")
         self.add_behaviour(self.ScanTerrain())
-        self.add_behaviour(self.ReceiveMessages())
+        # self.add_behaviour(self.ReceiveMessages())
         print(f"[{self.name}] Satellite online at orbit height {self.orbit_height} km")

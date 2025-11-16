@@ -55,7 +55,7 @@ class Base(Agent):
                 await self.send(msg)
                 print(f"[{self.agent.name}] CFP sent to {rover_jid} for mission at {self.target_position}")
 
-            timeout = 5  # seconds to wait for bids
+            timeout = 1  # seconds to wait for bids
 
             start_time = asyncio.get_event_loop().time()
             replies = []
@@ -78,11 +78,11 @@ class Base(Agent):
 
         def on_failure(self, message: Message):
             """Called if a rover fails during the negotiation."""
-            print(f"[{self.agent.name}] Base {message.sender} failed during the contract net protocol.")
+            print(f"[{self.agent.name}] Rover {message.sender} failed during the contract net protocol.")
 
         def on_not_understood(self, message: Message):
             """Called if a rover doesn't understand the CFP."""
-            print(f"[{self.agent.name}] Base {message.sender} did not understand the CFP.")
+            print(f"[{self.agent.name}] Rover {message.sender} did not understand the CFP.")
 
         def on_refuse(self, message: Message):
             """Called when a rover refuses to bid."""
@@ -91,10 +91,10 @@ class Base(Agent):
         async def on_propose(self, message: Message):
             """
             Called when a rover sends a proposal (a bid).
-            The bid should contain the current energy of the agent.
+            The bid should contain the cost for the mission (Time to be ready/reach target).
             """
             try:
-                # The bid should be: {"energy": 5.5, "rover": "rover_id"}
+                # The bid should be: {"cvost": 5.5, "rover": "rover_id"}
                 bid_data = eval(message.body)
                 cost = float(bid_data.get("cost", float('inf'))) # Time to be ready/reach target
                 rover_jid = bid_data.get("rover")
@@ -129,13 +129,13 @@ class Base(Agent):
 
             best_sender, best_data = min(self.agent.proposals.items(), key=lambda x: x[1]["cost"])
             best_bid = best_data
-            print(f"[{self.agent.name}] Accepting proposal from {best_sender} with cost {best_bid['cost']}")
             
-            # Accept the winner
-            accept_msg = Message(to=best_sender)
-            accept_msg.set_metadata("performative", "accept_proposal")
+            # Send the winner bid to the satelite and wait for further communication
+            accept_msg = Message(to="satellite@localhost")
+            accept_msg.set_metadata("performative", "propose")
             accept_msg.set_metadata("ontology", "rover_bid_cfp")
-            accept_msg.body = str({"target": self.target_position})
+            accept_msg.body = str({"target": self.target_position, "base": str(self.agent.jid), "rover": str(best_sender), "cost": best_bid['cost']})
+            print(f"[{self.agent.name}] Sending winner bid to satelite 'target': {self.target_position}, 'base': {self.agent.jid}, 'rover': {best_sender}, 'cost': {best_bid['cost']}")
             await self.send(accept_msg)
 
             # Reject all other proposals
@@ -166,6 +166,34 @@ class Base(Agent):
                     target_pos = eval(msg.body)
                     print(f"[{base.name}] Received mission CFP from {sender} for target {target_pos}")
                     base.add_behaviour(self.agent.RequestRoverForBid(target_pos))
+
+                # --- BID ACCEPTED FROM SATELLITE ---
+                if performative == "accept_proposal" and msg_type == "rover_bid_accepted":
+                    target_data = eval(msg.body)
+                    target_pos = target_data.get("target")
+                    winning_rover = target_data.get("rover")
+
+                    print(f"[{base.name}] Bid accepted from {sender} for target {target_pos}")
+                    # Send accept to rover
+                    accept_msg = Message(to=winning_rover)
+                    accept_msg.set_metadata("performative", "accept_proposal")
+                    accept_msg.set_metadata("ontology", "rover_bid_cfp")
+                    accept_msg.body = str({"target": target_pos})
+                    await self.send(accept_msg)
+                
+                # --- BID REJECTED FROM SATELLITE ---
+                if performative == "reject_proposal" and msg_type == "rover_bid_rejected":
+                    target_data = eval(msg.body)
+                    target_pos = target_data.get("target")
+                    rejected_rover = target_data.get("rover")
+                    print(f"[{base.name}] Bid rejected CFP from {sender} for target {target_pos}")
+
+                    # Send reject to rover
+                    reject_msg = Message(to="best_sender")
+                    reject_msg.set_metadata("performative", "reject_proposal")
+                    reject_msg.set_metadata("ontology", "rover_bid_cfp")
+                    await self.send(reject_msg)
+
 
             await asyncio.sleep(1)
 
