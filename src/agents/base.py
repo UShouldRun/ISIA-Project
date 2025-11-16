@@ -143,6 +143,9 @@ class Base(Agent):
                     reject_msg.set_metadata("ontology", "rover_bid_cfp")
                     reject_msg.body = str({"target": self.target_position})
                     await self.send(reject_msg)
+                
+            # Clear proposals for the next negotiation
+            self.agent.proposals = {}
 
         async def on_inform(self, message: Message):
             print(f"[{self.agent.name}] Received INFORM from {message.sender} about mission completion.")
