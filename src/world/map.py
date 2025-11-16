@@ -1,5 +1,6 @@
 from heapq import heapify, heappop, heappush
 from math import sqrt
+import random
 
 from typing import Tuple, List
 from heapq import *
@@ -8,6 +9,39 @@ from .world import WorldObject
 
 MapPos = Tuple[int, int]
 
+class MapCell():
+    def __init__(self, pos: MapPos, terrain: float):
+        # terrain
+        ## 1 for elevated (rover can't pass)
+        ## 0 for normal
+        ## -1 for depression (rover will fall)
+        self.terrain = terrain 
+        if terrain == 1: self.cost = float('inf')
+        if terrain == 0: self.cost = 1
+        if terrain == -1: self.cost = float('inf')
+
+        self.dust_storm = False
+        self.x = pos[0]
+        self.y = pos[1]
+
+    def get_cost(self) -> float:
+        """
+        Returns the cost to go over this MapCell
+        """
+        # If blocked
+        if self.base_cost == float('inf'):
+            return float('inf')
+
+        # Start with the static base cost
+        total_cost = self.base_cost
+        
+        # Apply penalty if a dust storm is active
+        if self.dust_storm:
+            # Multiply by a factor (e.g., 10x the base cost) to make the area highly undesirable
+            total_cost *= 3
+            
+        return total_cost
+
 class Map():
     def __init__(self, limit: Tuple[float, float]) -> None:
         self.graph:  int   = 0
@@ -15,6 +49,28 @@ class Map():
         self.colums: int   = int(limit[1])
         self.length: float = limit[0]
         self.height: float = limit[1]
+
+        self.grid: List[List[MapCell]] = self._initialize_grid()
+
+    def _initialize_grid(self) -> List[List[MapCell]]:
+        """Populates the grid with MapCell objects and assigns initial random terrain."""
+        grid = []
+        # Possible terrain types: -1, 0, 1
+        terrain_choices = [-1, 0, 1]
+        # Probability for each terrain type
+        weights = [0.05, 0.90, 0.05]
+        
+        for i in range(self.columns):
+            column = []
+            for j in range(self.rows):
+                # Randomly choose the initial terrain type
+                initial_terrain = random.choices(terrain_choices, weights=weights, k=1)[0]
+                
+                # Create the MapCell at (i, j)
+                cell = MapCell(pos=(i, j), terrain=initial_terrain)
+                column.append(cell)
+            grid.append(column)
+        return grid
 
     def normalize(self, pos: Tuple[float, float]) -> Tuple[int, int]:
         return (int(pos[0] * self.columns / self.length), int(pos[1] * self.rows / self.height))

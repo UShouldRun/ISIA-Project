@@ -114,6 +114,54 @@ def generate_world(config: Dict[str, Any]) -> Tuple[World, Map, Dict[str, Tuple[
     
     return world, world_map, base_centers, rover_positions, drone_positions
 
+async def simulate_hazards(world_map: 'Map', interval: int = 10):
+
+    def clear_storm() -> bool:
+        """Resets the storm flag on all cells and returns True if any storm was cleared."""
+        was_cleared = False
+        for i in range(world_map.columns):
+            for j in range(world_map.rows):
+                cell = world_map.get_cell(i, j)
+                if cell.dust_storm:
+                    cell.dust_storm = False
+                    was_cleared = True
+        return was_cleared
+
+    while True:
+        await asyncio.sleep(interval)
+        
+        if clear_storm():
+            print("[HAZARD] Previous storm subsided. Map cells reset.")
+        
+        # 3. Randomly introduce a new storm (e.g., 10% chance)
+        if random.random() < 0.10: 
+            
+            # Choose a center for the storm
+
+            center_x = random.randint(0, world_map.columns - 1)
+            center_y = random.randint(0, world_map.rows - 1)
+
+            # Choose a radius (in map units)
+            radius = random.randint(50, 200)
+
+            print(f"[HAZARD] New dust storm forming at ({center_x}, {center_y}) with radius {radius}.")
+
+            # Update the affected MapCells
+            for i in range(world_map.columns):
+                for j in range(world_map.rows):
+                    cell = world_map.get_cell(i, j)
+                    
+                    # Calculate distance
+                    dist = ((cell.x - center_x) ** 2 + (cell.y - center_y) ** 2) ** 0.5
+                    
+                    if dist < radius:
+                        cell.dust_storm = True
+            
+            print(f"[HAZARD] Map updated. Agents will calculate new paths.")
+        
+        else:
+            print("[HAZARD] All clear. No new storm detected.")
+
 async def main():
     # --- LOAD CONFIGURATION ---
     if len(sys.argv) < 2:
