@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Visualization</title>
+</head>
+<body>
+  <h1>Mars Agents Visualization</h1>
+  <script>
+    const ws = new WebSocket("ws://localhost:8080/ws");
+
+    ws.onopen = () => console.log("Connected to server");
+    ws.onmessage = (msg) => console.log("Received:", msg.data);
+    ws.onclose = () => console.log("Disconnected");
+  </script>
+</body>
+</html>
