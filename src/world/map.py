@@ -1,11 +1,13 @@
+import random
+
 from heapq import heapify, heappop, heappush
 from math import sqrt
-import random
 
 from typing import Tuple, List
 from heapq import *
 
 from .world import WorldObject
+from settings import YELLOW, RESET
 
 MapPos = Tuple[int, int]
 
@@ -16,9 +18,7 @@ class MapCell():
         ## 0 for normal
         ## -1 for depression (rover will fall)
         self.terrain = terrain 
-        if terrain == 1: self.cost = float('inf')
-        if terrain == 0: self.cost = 1
-        if terrain == -1: self.cost = float('inf')
+        self.cost = 0 if terrain == 0 else float('inf')
 
         self.dust_storm = False
         self.x = pos[0]
@@ -29,26 +29,26 @@ class MapCell():
         Returns the cost to go over this MapCell
         """
         # If blocked
-        if self.base_cost == float('inf'):
+        if self.cost == float('inf'):
             return float('inf')
 
         # Start with the static base cost
-        total_cost = self.base_cost
+        total_cost = self.cost
         
         # Apply penalty if a dust storm is active
         if self.dust_storm:
             # Multiply by a factor (e.g., 10x the base cost) to make the area highly undesirable
-            total_cost *= 3
+            total_cost += 3
             
         return total_cost
 
 class Map():
     def __init__(self, limit: Tuple[float, float]) -> None:
-        self.graph:  int   = 0
-        self.rows:   int   = int(limit[0])
-        self.colums: int   = int(limit[1])
-        self.length: float = limit[0]
-        self.height: float = limit[1]
+        self.graph:   int   = 0
+        self.rows:    int   = int(limit[0])
+        self.columns: int   = int(limit[1])
+        self.length:  float = limit[0]
+        self.height:  float = limit[1]
 
         self.grid: List[List[MapCell]] = self._initialize_grid()
 
@@ -88,16 +88,16 @@ class Map():
 
     def add(self, obstacles: List[WorldObject]) -> None:
         for obj in obstacles:
-            pos: Tuple[int, int] = Map.normalize(obj.pos)
+            pos: Tuple[int, int] = self.normalize(obj.pos)
             self.graph |= 1 << (pos[0] * self.columns + pos[1])
 
     def remove(self, obstacles: List[WorldObject]) -> None:
         for obj in obstacles:
-            pos: Tuple[int, int] = Map.normalize(obj.pos)
+            pos: Tuple[int, int] = self.normalize(obj.pos)
             self.graph &= (1 << (pos[0] * self.columns + pos[1])) - 1
 
     def pos_is_blocked(self, pos: Tuple[float, float]) -> bool:
-        i, j = Map.normalize(pos)
+        i, j = self.normalize(pos)
         return (self.graph >> (i * self.columns + j)) & 1
 
 class AStarNode():
@@ -121,7 +121,13 @@ class AStar():
         return seq
 
     @staticmethod
+    def _heuristic(map: Map, curr: MapPos, next: MapPos) -> float:
+        return map.distance(curr, next) + map.grid[next[0]][next[1]].get_cost()
+
+    @staticmethod
     def run(map: Map, start: Tuple[float, float], goal: Tuple[float, float]) -> List[Tuple[float, float]]:
+        print(f"{YELLOW}AStar[STARTING]: start = {start}, goal = {goal}{RESET}")
+
         s: MapPos = map.normalize(start)
         g: MapPos = map.normalize(goal)
 
@@ -147,11 +153,14 @@ class AStar():
 
         while min_heap != []:
             curr: MapPos = heappop(min_heap).pos
+            print(f"{YELLOW}AStar[RUNNING]: curr = {map.rescale(curr)}, fScore = {fScore[curr]}{RESET}")
+            
             if curr[0] == g[0] and curr[1] == g[1]:
+                print(f"{YELLOW}AStar[FINISHING]: reconstructing path{RESET}")
                 return AStar._reconstruct(map, path, s, g)
 
             neighbours: List[MapPos] = filter(
-                    lambda pos: map.in_map(pos) and
+                    lambda pos: map.in_map(pos),
                     [(curr[0] + dir_x, curr[1] + dir_y)
                      for dir_x, dir_y in [
                          (-1,-1), (0,-1), (1,-1), (1,0),
@@ -159,14 +168,17 @@ class AStar():
                     ]]
                 )
             for neighbour in neighbours:
-                tentative_gScore: float = gScore[curr] + map.distance(curr, neighbour)
+                tentative_gScore: float = gScore[curr] + AStar._heuristic(map, curr, neighbour)
+                if tentative_gScore == float('inf'):
+                    continue
 
                 if tentative_gScore < gScore[neighbour]:
                     path[neighbour]   = curr
                     gScore[neighbour] = tentative_gScore
-                    fScore[neighbour] = tentative_gScore + map.distance(neighbour, g)
+                    fScore[neighbour] = tentative_gScore + AStar._heuristic(map, neighbour, g)
 
                     if neighbour not in min_heap:
-                        heappush(min_heap, AStarNode(neighbour, gScore[neighbour]))
+                        heappush(min_heap, AStarNode(neighbour, fScore[neighbour]))
 
+        print(f"{YELLOW}AStar[FINISHING]: did not find path{RESET}")
         return []

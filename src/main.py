@@ -115,7 +115,6 @@ def generate_world(config: Dict[str, Any]) -> Tuple[World, Map, Dict[str, Tuple[
     return world, world_map, base_centers, rover_positions, drone_positions
 
 async def simulate_hazards(world_map: 'Map', interval: int = 10):
-
     def clear_storm() -> bool:
         """Resets the storm flag on all cells and returns True if any storm was cleared."""
         was_cleared = False
@@ -195,7 +194,7 @@ async def main():
     agents_to_start = []
     
     # Create Bases
-    bases = []
+    bases = {}
     for base_config in base_configs:
         base_jid = base_jids[base_config["jid"]]
         base_name = base_config.get("name", base_config["jid"])
@@ -214,12 +213,12 @@ async def main():
             base_center,
             rovers_for_this_base
         )
-        bases.append(base)
+        bases[base_jid] = base
         agents_to_start.append(base)
         print(f"[INIT] Initialized Base '{base_name}' at {base_center} with {len(rovers_for_this_base)} rovers")
     
     # Create Drones
-    drones = []
+    drones = {}
     for i, (drone_config, drone_pos) in enumerate(zip(drone_configs, drone_positions)):
         drone_jid = drone_jids[drone_config["jid"]]
         drone_name = drone_config.get("name", drone_config["jid"])
@@ -236,12 +235,12 @@ async def main():
             drone_pos,
             known_bases=known_base_jids
         )
-        drones.append(drone)
+        drones[drone_jid] = drone
         agents_to_start.append(drone)
         print(f"[INIT] Initialized Drone '{drone_name}' at {drone_pos} knowing {len(known_base_jids)} bases")
     
     # Create Rovers
-    rovers = []
+    rovers = {}
     for i, (rover_config, rover_pos) in enumerate(zip(rover_configs, rover_positions)):
         rover_jid = rover_jids[rover_config["jid"]]
         rover_name = rover_config.get("name", rover_config["jid"])
@@ -261,10 +260,11 @@ async def main():
             rover_name,
             rover_pos,
             world,
-            assigned_drone=assigned_drone_jid,
-            base_jid=rover_base_jid
+            world_map,
+            base_jid=rover_base_jid,
+            base_position=bases[base_jid].position
         )
-        rovers.append(rover)
+        rovers[rover_jid] = rover
         agents_to_start.append(rover)
         print(f"[INIT] Initialized Rover '{rover_name}' at {rover_pos} (Base: {rover_base_name}, Drone: {assigned_drone_name})")
     

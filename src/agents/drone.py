@@ -10,6 +10,8 @@ from spade.message import Message
 from world.world import World, WorldObject
 from world.map import Map
 
+from settings import *
+
 class Drone(Agent):
     def __init__(
         self,
@@ -45,7 +47,7 @@ class Drone(Agent):
     # -------------------------------------------------------------------------
     class ScanTerrain(CyclicBehaviour):
         async def on_start(self):
-            print(f"[{self.agent.name}] Starting terrain scanning...")
+            print(f"{GREEN}[{self.agent.name}] Starting terrain scanning...{RESET}")
 
         # Simulate detection of area of interest (5% chance)
         def is_area_of_interest(self) -> bool:
@@ -67,11 +69,11 @@ class Drone(Agent):
 
             if scan_pos not in drone.scanned_areas:
                 drone.scanned_areas.append(scan_pos)
-                print(f"[{drone.name}] Scanning area: {scan_pos}")
+                print(f"{GREEN}[{drone.name}] Scanning area: {scan_pos}{RESET}")
                 
                 if self.is_area_of_interest():
                     drone.areas_of_interest.append(scan_pos)
-                    print(f"[{drone.name}] Area of interest detected at {scan_pos}")
+                    print(f"{GREEN}[{drone.name}] Area of interest detected at {scan_pos}{RESET}")
                     
                     # Request mission x
                     drone.add_behaviour(drone.RequestAgentForMission(scan_pos))
@@ -101,7 +103,7 @@ class Drone(Agent):
                 msg.set_metadata("type", "rover_mission_cfp")
                 msg.body = str(self.target_position)
                 await self.send(msg)
-                print(f"[{self.agent.name}] CFP sent to {base_jid} for mission at {self.target_position}")
+                print(f"{GREEN}[{self.agent.name}] CFP sent to {base_jid} for mission at {self.target_position}{RESET}")
 
             timeout = 4  # seconds to wait for bids
 
@@ -126,15 +128,15 @@ class Drone(Agent):
             
         def on_refuse(self, message: Message):
             """Called when a base refuses to bid."""
-            print(f"[{self.agent.name}] Base {message.sender} refused to bid for mission at {self.target_position}")
+            print(f"{GREEN}[{self.agent.name}] Base {message.sender} refused to bid for mission at {self.target_position}{RESET}")
 
         def on_failure(self, message: Message):
             """Called if a base fails during the negotiation."""
-            print(f"[{self.agent.name}] Base {message.sender} failed during the contract net protocol.")
+            print(f"{GREEN}[{self.agent.name}] Base {message.sender} failed during the contract net protocol.{RESET}")
 
         def on_not_understood(self, message: Message):
             """Called if a base doesn't understand the CFP."""
-            print(f"[{self.agent.name}] Base {message.sender} did not understand the CFP.")
+            print(f"{GREEN}[{self.agent.name}] Base {message.sender} did not understand the CFP.{RESET}")
 
         async def on_propose(self, message: Message):
             """
@@ -148,17 +150,17 @@ class Drone(Agent):
                 base_jid = bid_data.get("base")
                 rover_jid = bid_data.get("rover")
                 
-                print(f"[{self.agent.name}] Received PROPOSAL from base: {base_jid}: Cost={cost}, Rover={rover_jid}")
+                print(f"{GREEN}[{self.agent.name}] Received PROPOSAL from base: {base_jid}: Cost={cost}, Rover={rover_jid}{RESET}")
                                 
                 # Store the valid bid
                 if base_jid is not None and rover_jid is not None:
                     # Storing bid data along with the sender JID
                     self.agent.proposals[base_jid] = {"cost": cost, "base": base_jid, "rover": rover_jid, "proposal_msg": message}
                 else:
-                    print(f"[{self.agent.name}] Ignoring invalid proposal from {message.sender}: No 'rover' specified.")
+                    print(f"{GREEN}[{self.agent.name}] Ignoring invalid proposal from {message.sender}: No 'rover' specified.{RESET}")
             
             except (SyntaxError, TypeError, ValueError):
-                print(f"[{self.agent.name}] Invalid proposal format from {message.sender}. Body: {message.body}")
+                print(f"{GREEN}[{self.agent.name}] Invalid proposal format from {message.sender}. Body: {message.body}{RESET}")
 
 
         async def on_all_responses_received(self, replies: List[Message]):
@@ -166,10 +168,10 @@ class Drone(Agent):
             Called when all expected replies (proposes or refuses) are received,
             or the timeout has expired.
             """
-            print(f"[{self.agent.name}] All responses received for mission at {self.target_position}. Total replies: {len(replies)}")
+            print(f"{GREEN}[{self.agent.name}] All responses received for mission at {self.target_position}. Total replies: {len(replies)}{RESET}")
 
             if not self.agent.proposals:
-                print(f"[{self.agent.name}] No proposals received for mission at {self.target_position}. Retrying later.")
+                print(f"{GREEN}[{self.agent.name}] No proposals received for mission at {self.target_position}. Retrying later.{RESET}")
                 # Clear proposals for the next negotiation
                 self.agent.proposals = {} 
                 return
@@ -179,7 +181,7 @@ class Drone(Agent):
 
             if best_base:
                 # ACCEPT the best proposal
-                print(f"[{self.agent.name}] Accepting proposal from {best_base} with cost {min_cost}")
+                print(f"{GREEN}[{self.agent.name}] Accepting proposal from {best_base} with cost {min_cost}{RESET}")
 
                 # Send the winner bid to the satelite and wait for further communication
                 accept_msg = Message(to=best_base)
@@ -192,7 +194,7 @@ class Drone(Agent):
                 # REJECT all other proposals
                 for base_jid, data in self.agent.proposals.items():
                     if base_jid != best_base:
-                        print(f"[{self.agent.name}] Rejecting proposal from {base_jid}")
+                        print(f"{GREEN}[{self.agent.name}] Rejecting proposal from {base_jid}{RESET}")
                         reject_msg = Message(to=base_jid)
                         reject_msg.set_metadata("performative", "reject_proposal")
                         reject_msg.set_metadata("type", "rover_bid_rejected")
@@ -200,7 +202,7 @@ class Drone(Agent):
 
                         await self.send(reject_msg)
             else:
-                print(f"[{self.agent.name}] No suitable proposals received for mission at {self.target_position}. Retrying later.")
+                print(f"{GREEN}[{self.agent.name}] No suitable proposals received for mission at {self.target_position}. Retrying later.{RESET}")
 
             # Clear proposals for the next negotiation
             self.agent.proposals = {}
@@ -214,7 +216,7 @@ class Drone(Agent):
             For this setup, it's used to confirm the rover assignment.
             """
             sender = str(message.sender)
-            print(f"[{self.agent.name}] Received INFORM from winning base {sender}.")
+            print(f"{GREEN}[{self.agent.name}] Received INFORM from winning base {sender}.{RESET}")
 
             # The base is expected to send an INFORM back to the drone
             # with the final rover assignment details.
@@ -230,12 +232,13 @@ class Drone(Agent):
                 # ontology = msg.metadata.get("ontology")
                 # sender = str(msg.sender).split("@")[0]
                 
-                # print(f"[{drone.name}] Message received from {sender} (type: )")
+                # print(f"{GREEN}[{drone.name}] Message received from {sender} (type: ){RESET}")
 
             # await asyncio.sleep(1)
 
     async def setup(self):
-        print(f"Initializing [{self.name}] drone.")
+        print(f"{GREEN}Initializing [{self.name}] drone.{RESET}")
+        await asyncio.sleep(5)
         self.add_behaviour(self.ScanTerrain())
         # self.add_behaviour(self.ReceiveMessages())
-        print(f"[{self.name}] Drone online at orbit height {self.orbit_height} km")
+        print(f"{GREEN}[{self.name}] Drone online at orbit height {self.orbit_height} km{RESET}")

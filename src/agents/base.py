@@ -37,21 +37,24 @@ class Base(Agent):
         """
         Implements the Initiator role in the FIPA Contract Net Protocol
         """
-        def __init__(self, target_position: Tuple[float, float]):
+        def __init__(self, target_position: Tuple[float, float], drone: str) -> None:
             super().__init__()
             self.target_position = target_position
+            self.drone = drone
             
         async def run(self):
             """
                 Send CFP to all rovers
             """
-            for rover_jid in self.agent.rovers:
+            base = self.agent
+
+            for rover_jid in base.rovers:
                 msg = Message(to=rover_jid)
                 msg.set_metadata("performative", "cfp")
                 msg.set_metadata("ontology", "rover_bid_cfp")
                 msg.body = str(self.target_position)
                 await self.send(msg)
-                print(f"[{self.agent.name}] CFP sent to {rover_jid} for mission at {self.target_position}")
+                print(f"{MAGENTA}[{base.name}] CFP sent to {rover_jid} for mission at {self.target_position}{RESET}")
 
             timeout = 1  # seconds to wait for bids
 
@@ -75,15 +78,15 @@ class Base(Agent):
 
         def on_failure(self, message: Message):
             """Called if a rover fails during the negotiation."""
-            print(f"[{self.agent.name}] Rover {message.sender} failed during the contract net protocol.")
+            print(f"{MAGENTA}[{self.agent.name}] Rover {message.sender} failed during the contract net protocol.{RESET}")
 
         def on_not_understood(self, message: Message):
             """Called if a rover doesn't understand the CFP."""
-            print(f"[{self.agent.name}] Rover {message.sender} did not understand the CFP.")
+            print(f"{MAGENTA}[{self.agent.name}] Rover {message.sender} did not understand the CFP.{RESET}")
 
         def on_refuse(self, message: Message):
             """Called when a rover refuses to bid."""
-            print(f"[{self.agent.name}] Rover {message.sender} refused to bid for mission at {self.target_position}")
+            print(f"{MAGENTA}[{self.agent.name}] Rover {message.sender} refused to bid for mission at {self.target_position}{RESET}")
 
         async def on_propose(self, message: Message):
             """
@@ -91,32 +94,35 @@ class Base(Agent):
             The bid should contain the cost for the mission (Time to be ready/reach target).
             """
             try:
+                base = self.agent
+
                 # The bid should be: {"cvost": 5.5, "rover": "rover_id"}
                 bid_data = eval(message.body)
                 cost = float(bid_data.get("cost", float('inf'))) # Time to be ready/reach target
                 rover_jid = bid_data.get("rover")
                 
-                print(f"[{self.agent.name}] Received PROPOSAL from {message.sender}: Cost={cost}, Rover={rover_jid}")
+                print(f"{MAGENTA}[{base.name}] Received PROPOSAL from {message.sender}: Cost={cost}, Rover={rover_jid}{RESET}")
                 
                 # Store the valid bid
                 if rover_jid is not None:
                     # Storing bid data along with the sender JID
-                    self.agent.proposals[str(message.sender)] = {"cost": cost, "rover": rover_jid, "proposal_msg": message}
+                    base.proposals[str(message.sender)] = {"cost": cost, "rover": rover_jid, "proposal_msg": message}
                 else:
-                    print(f"[{self.agent.name}] Ignoring invalid proposal from {message.sender}: No 'rover id' specified.")
+                    print(f"{MAGENTA}[{base.name}] Ignoring invalid proposal from {message.sender}: No 'rover id' specified.{RESET}")
             
             except (SyntaxError, TypeError, ValueError):
-                print(f"[{self.agent.name}] Invalid proposal format from {message.sender}. Body: {message.body}")
+                print(f"{MAGENTA}[{base.name}] Invalid proposal format from {message.sender}. Body: {message.body}{RESET}")
 
         async def on_all_responses_received(self):
             """
             Called when all expected replies (proposes or refuses) are received,
             or the timeout has expired.
             """
-            print(f"[{self.agent.name}] All responses received for mission at {self.target_position}.")
+            base = self.agent
+            print(f"{MAGENTA}[{base.name}] All responses received for mission at {self.target_position}.{RESET}")
 
-            if not self.agent.proposals:
-                print(f"[{self.agent.name}] No proposals received for mission at {self.target_position}")
+            if not base.proposals:
+                print(f"{MAGENTA}[{base.name}] No proposals received for mission at {self.target_position}{RESET}")
                 return
 
             """
@@ -124,31 +130,29 @@ class Base(Agent):
             and estimates the minimum mission time (charge + travel).
             """
 
-            best_sender, best_data = min(self.agent.proposals.items(), key=lambda x: x[1]["cost"])
+            best_sender, best_data = min(base.proposals.items(), key=lambda x: x[1]["cost"])
             best_bid = best_data
             
             # Send the winner bid to the drone and wait for further communication
-            accept_msg = Message(to="drone@localhost")
+            accept_msg = Message(to=self.drone)
             accept_msg.set_metadata("performative", "propose")
             accept_msg.set_metadata("ontology", "rover_bid_cfp")
-            accept_msg.body = str({"target": self.target_position, "base": str(self.agent.jid), "rover": str(best_sender), "cost": best_bid['cost']})
-            print(f"[{self.agent.name}] Sending winner bid to satelite 'target': {self.target_position}, 'base': {self.agent.jid}, 'rover': {best_sender}, 'cost': {best_bid['cost']}")
+            accept_msg.body = str({"target": self.target_position, "base": str(base.jid), "rover": str(best_sender), "cost": best_bid['cost']})
+            print(f"{MAGENTA}[{base.name}] Sending winner bid to drone 'target': {self.target_position}, 'base': {base.jid}, 'rover': {best_sender}, 'cost': {best_bid['cost']}{RESET}")
             await self.send(accept_msg)
 
             # Reject all other proposals
-            for sender, data in self.agent.proposals.items():
+            for sender, data in base.proposals.items():
                 if sender != best_sender:
                     reject_msg = Message(to=sender)
                     reject_msg.set_metadata("performative", "reject_proposal")
                     reject_msg.set_metadata("ontology", "rover_bid_cfp")
                     reject_msg.body = str({"target": self.target_position})
                     await self.send(reject_msg)
-                
-            # Clear proposals for the next negotiation
-            self.agent.proposals = {}
+            base.proposals = {}
 
         async def on_inform(self, message: Message):
-            print(f"[{self.agent.name}] Received INFORM from {message.sender} about mission completion.")
+            print(f"{MAGENTA}[{self.agent.name}] Received INFORM from {message.sender} about mission completion.{RESET}")
 
     class ReceiveMessages(CyclicBehaviour):
         async def run(self):
@@ -159,21 +163,30 @@ class Base(Agent):
                 sender = str(msg.sender).split("@")[0]
                 msg_type = msg.metadata.get("type")
                 performative = msg.metadata.get("performative")
-                print(f"[{base.name}] Message received from {sender} (type: {msg_type}, performative: {performative})")
+                print(f"{MAGENTA}[{base.name}] Message received from {sender} (type: {msg_type}, performative: {performative}){RESET}")
 
-                # --- MISSION REQUEST FROM SATELLITE ---
+                # --- MISSION REQUEST FROM DRONE ---
                 if performative == "cfp" and msg_type == "rover_mission_cfp":
-                    target_pos = eval(msg.body)
-                    print(f"[{base.name}] Received mission CFP from {sender} for target {target_pos}")
-                    base.add_behaviour(self.agent.RequestRoverForBid(target_pos))
+                    if not base.rovers:
+                        drone_msg = Message(to=msg.sender)
+                        drone_msg.set_metadata("performative", "reject_proposal")
+                        drone_msg.set_metadata("ontology", "drone_bid_cfp")
+                        drone_msg.body = "No rovers available!"
+                        print(f"{MAGENTA}[{base.name}] Sending reject bid to drone, no rovers available {RESET}")
+                        await self.send(drone_msg)
 
-                # --- BID ACCEPTED FROM SATELLITE ---
+                    else:
+                        target_pos = eval(msg.body)
+                        print(f"{MAGENTA}[{base.name}] Received mission CFP from {sender} for target {target_pos}{RESET}")
+                        base.add_behaviour(base.RequestRoverForBid(target_pos, msg.sender))
+
+                # --- BID ACCEPTED FROM DRONE ---
                 if performative == "accept_proposal" and msg_type == "rover_bid_accepted":
                     target_data = eval(msg.body)
                     target_pos = target_data.get("target")
                     winning_rover = target_data.get("rover")
 
-                    print(f"[{base.name}] Bid accepted from {sender} for target {target_pos}")
+                    print(f"{MAGENTA}[{base.name}] Bid accepted from {sender} for target {target_pos}{RESET}")
                     # Send accept to rover
                     accept_msg = Message(to=winning_rover)
                     accept_msg.set_metadata("performative", "accept_proposal")
@@ -181,12 +194,12 @@ class Base(Agent):
                     accept_msg.body = str({"target": target_pos})
                     await self.send(accept_msg)
                 
-                # --- BID REJECTED FROM SATELLITE ---
+                # --- BID REJECTED FROM DRONE ---
                 if performative == "reject_proposal" and msg_type == "rover_bid_rejected":
                     target_data = eval(msg.body)
                     target_pos = target_data.get("target")
                     rejected_rover = target_data.get("rover")
-                    print(f"[{base.name}] Bid rejected CFP from {sender} for target {target_pos}")
+                    print(f"{MAGENTA}[{base.name}] Bid rejected CFP from {sender} for target {target_pos}{RESET}")
 
                     # Send reject to rover
                     reject_msg = Message(to="best_sender")
@@ -214,5 +227,5 @@ class Base(Agent):
     # SETUP
     # -------------------------------------------------------------------------
     async def setup(self):
-        print(f"[{self.name}] Base operational at position {self.position}")
+        print(f"{MAGENTA}[{self.name}] Base operational at position {self.position}{RESET}")
         self.add_behaviour(self.ReceiveMessages())
