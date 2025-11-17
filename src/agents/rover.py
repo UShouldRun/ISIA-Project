@@ -56,13 +56,14 @@ class Rover(VisualizationMixin, Agent):
             "silicon": 0.2,     # 20% chance
             "water_ice": 0.1,   # 10% chance
         }
+        self.viz_server = viz_server
 
-        if viz_server: 
-            self.setup_visualization(
-                viz_server,
-                agent_type="rover",
-                color="red"   # whatever color
-            )
+        if self.viz_server:
+                self.setup_visualization(
+                    self.viz_server,
+                    agent_type="rover",
+                    color="red"
+                )
 
     # -------------------------------------------------------------------------
     # UTILITIES

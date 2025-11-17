@@ -1,16 +1,758 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>Visualization</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Planetary Exploration - SPADE Visualization</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #111827;
+            color: #ffffff;
+            overflow: hidden;
+        }
+
+        .container {
+            padding: 1rem;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .title {
+            font-size: 1.5rem;
+            font-weight: bold;
+        }
+
+        .subtitle {
+            font-size: 0.875rem;
+            color: #9ca3af;
+        }
+
+        .controls {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        button {
+            padding: 0.5rem 1rem;
+            border: none;
+            border-radius: 0.375rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-start {
+            background: #10b981;
+            color: white;
+        }
+
+        .btn-start:hover {
+            background: #059669;
+        }
+
+        .btn-pause {
+            background: #ef4444;
+            color: white;
+        }
+
+        .btn-pause:hover {
+            background: #dc2626;
+        }
+
+        .btn-reset {
+            background: #374151;
+            color: white;
+        }
+
+        .btn-reset:hover {
+            background: #4b5563;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 1rem;
+        }
+
+        .stat-card {
+            background: #1f2937;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .stat-value {
+            font-size: 1.5rem;
+            font-weight: bold;
+        }
+
+        .stat-label {
+            font-size: 0.875rem;
+            color: #9ca3af;
+        }
+
+        .main-content {
+            flex: 1;
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 1rem;
+            min-height: 0;
+        }
+
+        .canvas-container {
+            background: #1f2937;
+            border-radius: 0.5rem;
+            padding: 1rem;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .canvas-title {
+            font-size: 1.125rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+
+        canvas {
+            border: 1px solid #374151;
+            cursor: crosshair;
+            background: #0f172a;
+        }
+
+        .legend {
+            margin-top: 0.5rem;
+            display: flex;
+            gap: 1rem;
+            font-size: 0.875rem;
+            flex-wrap: wrap;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .legend-color {
+            width: 1rem;
+            height: 1rem;
+            border-radius: 0.25rem;
+        }
+
+        .right-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            min-height: 0;
+        }
+
+        .panel {
+            background: #1f2937;
+            border-radius: 0.5rem;
+            padding: 1rem;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+        }
+
+        .panel-title {
+            font-size: 1.125rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+
+        .agents-list {
+            flex: 1;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .agent-item {
+            background: #374151;
+            padding: 0.75rem;
+            border-radius: 0.375rem;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .agent-item:hover {
+            background: #4b5563;
+        }
+
+        .agent-item.selected {
+            background: #4b5563;
+            border: 2px solid #60a5fa;
+        }
+
+        .agent-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.5rem;
+        }
+
+        .agent-name {
+            font-weight: 600;
+        }
+
+        .agent-status {
+            font-size: 0.75rem;
+            color: #9ca3af;
+        }
+
+        .battery-bar {
+            width: 100%;
+            height: 0.5rem;
+            background: #4b5563;
+            border-radius: 0.25rem;
+            overflow: hidden;
+        }
+
+        .battery-fill {
+            height: 100%;
+            transition: width 0.3s;
+        }
+
+        .battery-high {
+            background: #10b981;
+        }
+
+        .battery-medium {
+            background: #f59e0b;
+        }
+
+        .battery-low {
+            background: #ef4444;
+        }
+
+        .commands {
+            margin-top: 0.75rem;
+            padding-top: 0.75rem;
+            border-top: 1px solid #4b5563;
+        }
+
+        .commands-title {
+            font-size: 0.875rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+
+        .commands-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.5rem;
+        }
+
+        .cmd-btn {
+            padding: 0.375rem;
+            font-size: 0.875rem;
+        }
+
+        .messages-list {
+            flex: 1;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 0.75rem;
+        }
+
+        .message {
+            color: #d1d5db;
+            margin-bottom: 0.25rem;
+        }
+
+        .message-time {
+            color: #6b7280;
+        }
+
+        .message-sender {
+            color: #60a5fa;
+        }
+
+        .connection-status {
+            position: fixed;
+            top: 1rem;
+            right: 1rem;
+            padding: 0.5rem 1rem;
+            border-radius: 0.375rem;
+            font-size: 0.875rem;
+            font-weight: 600;
+            z-index: 1000;
+        }
+
+        .status-connected {
+            background: #10b981;
+            color: white;
+        }
+
+        .status-disconnected {
+            background: #ef4444;
+            color: white;
+        }
+
+        .status-simulation {
+            background: #f59e0b;
+            color: white;
+        }
+
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #1f2937;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #4b5563;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #6b7280;
+        }
+    </style>
 </head>
 <body>
-  <h1>Mars Agents Visualization</h1>
-  <script>
-    const ws = new WebSocket("ws://localhost:8080/ws");
+    <div id="connection-status" class="connection-status status-disconnected">
+        Connecting...
+    </div>
 
-    ws.onopen = () => console.log("Connected to server");
-    ws.onmessage = (msg) => console.log("Received:", msg.data);
-    ws.onclose = () => console.log("Disconnected");
-  </script>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <div>
+                <div class="title">🚀 Planetary Exploration System</div>
+                <div class="subtitle">Multi-Agent SPADE Simulation</div>
+            </div>
+            <div class="controls">
+                <button id="startBtn" class="btn-start" onclick="toggleSimulation()">Start Mission</button>
+                <button id="resetBtn" class="btn-reset" onclick="resetSimulation()">Reset</button>
+            </div>
+        </div>
+
+        <!-- Stats -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div>
+                    <div class="stat-value" id="terrainMapped">0%</div>
+                    <div class="stat-label">Terrain Mapped</div>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div>
+                    <div class="stat-value" id="resourcesFound">0</div>
+                    <div class="stat-label">Resources Found</div>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div>
+                    <div class="stat-value" id="avgEnergy">100%</div>
+                    <div class="stat-label">Avg Energy</div>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div>
+                    <div class="stat-value" id="missionTime">0s</div>
+                    <div class="stat-label">Mission Time</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <!-- Canvas -->
+            <div class="canvas-container">
+                <div class="canvas-title">Planetary Surface</div>
+                <canvas id="mainCanvas" width="600" height="600"></canvas>
+                <div class="legend">
+                    <div class="legend-item">
+                        <div class="legend-color" style="background: #3b82f6;"></div>
+                        <span>Rover</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color" style="background: #f59e0b; clip-path: polygon(50% 0%, 100% 100%, 0% 100%);"></div>
+                        <span>Drone</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color" style="background: #8b5cf6; border-radius: 50%;"></div>
+                        <span>Base</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color" style="background: #10b981; border-radius: 50%;"></div>
+                        <span>Resource</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color" style="background: rgba(239, 68, 68, 0.3); border-radius: 50%;"></div>
+                        <span>Hazard</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Panel -->
+            <div class="right-panel">
+                <!-- Agents -->
+                <div class="panel">
+                    <div class="panel-title">Active Agents</div>
+                    <div id="agentsList" class="agents-list"></div>
+                    <div id="commandsPanel" class="commands" style="display: none;">
+                        <div class="commands-title">Commands</div>
+                        <div class="commands-grid">
+                            <button class="btn-start cmd-btn" onclick="sendCommand('explore')">Explore</button>
+                            <button class="btn-pause cmd-btn" onclick="sendCommand('return')">Return</button>
+                            <button class="btn-reset cmd-btn" onclick="sendCommand('scan')">Scan</button>
+                            <button class="btn-start cmd-btn" onclick="sendCommand('recharge')">Recharge</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Messages -->
+                <div class="panel">
+                    <div class="panel-title">Communication Log</div>
+                    <div id="messagesList" class="messages-list"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // State
+        let ws = null;
+        let isRunning = false;
+        let agents = [];
+        let resources = [];
+        let hazards = [];
+        let exploredCells = new Set();
+        let selectedAgent = null;
+
+        const GRID_SIZE = 50;
+        const CELL_SIZE = 12;
+
+        const canvas = document.getElementById('mainCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // Initialize
+        window.onload = function() {
+            connectWebSocket();
+            render();
+            addMessage('System', 'Visualization interface loaded');
+        };
+
+        // WebSocket connection
+        function connectWebSocket() {
+            const statusEl = document.getElementById('connection-status');
+            
+            try {
+                ws = new WebSocket('ws://localhost:8080/ws');
+
+                ws.onopen = () => {
+                    console.log('Connected to SPADE');
+                    statusEl.textContent = '✓ Connected';
+                    statusEl.className = 'connection-status status-connected';
+                    addMessage('System', 'Connected to SPADE system');
+                };
+
+                ws.onmessage = (event) => {
+                    const data = JSON.parse(event.data);
+                    handleMessage(data);
+                };
+
+                ws.onerror = () => {
+                    console.log('WebSocket error');
+                    statusEl.textContent = '⚠ Connection Error';
+                    statusEl.className = 'connection-status status-simulation';
+                };
+
+                ws.onclose = () => {
+                    console.log('Disconnected from SPADE');
+                    statusEl.textContent = '✗ Disconnected';
+                    statusEl.className = 'connection-status status-disconnected';
+                    // Try to reconnect after 3 seconds
+                    setTimeout(connectWebSocket, 3000);
+                };
+            } catch (error) {
+                console.log('WebSocket not available:', error);
+                statusEl.textContent = '✗ No Connection';
+                statusEl.className = 'connection-status status-disconnected';
+            }
+        }
+
+        function handleMessage(data) {
+            switch (data.type) {
+                case 'agent_update':
+                    updateAgent(data.agent);
+                    break;
+                case 'resource_discovered':
+                    addResource(data.resource);
+                    break;
+                case 'hazard_detected':
+                    addHazard(data.hazard);
+                    break;
+                case 'cell_explored':
+                    markCellExplored(data.x, data.y);
+                    break;
+                case 'message':
+                    addMessage(data.from, data.content);
+                    break;
+                case 'stats':
+                    updateStats(data.stats);
+                    break;
+            }
+        }
+
+        function updateAgent(agentData) {
+            const index = agents.findIndex(a => a.id === agentData.id);
+            if (index >= 0) {
+                agents[index] = { ...agents[index], ...agentData };
+            } else {
+                agents.push(agentData);
+            }
+            renderAgents();
+            render();
+        }
+
+        function addResource(resource) {
+            const exists = resources.find(r => r.id === resource.id);
+            if (!exists) {
+                resources.push({ ...resource, discovered: true });
+                addMessage('Discovery', ${resource.type} found at (${Math.floor(resource.x)}, ${Math.floor(resource.y)}));
+            }
+            render();
+        }
+
+        function addHazard(hazard) {
+            const exists = hazards.find(h => h.id === hazard.id);
+            if (!exists) {
+                hazards.push(hazard);
+                addMessage('Alert', Hazard: ${hazard.type} at (${Math.floor(hazard.x)}, ${Math.floor(hazard.y)}));
+            }
+            render();
+        }
+
+        function markCellExplored(x, y) {
+            exploredCells.add(${x},${y});
+            render();
+        }
+
+        function updateStats(stats) {
+            document.getElementById('terrainMapped').textContent = stats.terrainMapped.toFixed(1) + '%';
+            document.getElementById('resourcesFound').textContent = stats.resourcesFound;
+            document.getElementById('avgEnergy').textContent = stats.totalEnergy.toFixed(0) + '%';
+            document.getElementById('missionTime').textContent = stats.missionTime + 's';
+        }
+
+        function addMessage(sender, content) {
+            const list = document.getElementById('messagesList');
+            const time = new Date().toLocaleTimeString();
+            const msg = document.createElement('div');
+            msg.className = 'message';
+            msg.innerHTML = <span class="message-time">[${time}]</span> <span class="message-sender">${sender}:</span> ${content};
+            list.insertBefore(msg, list.firstChild);
+            
+            // Keep only last 50 messages
+            while (list.children.length > 50) {
+                list.removeChild(list.lastChild);
+            }
+        }
+
+        function renderAgents() {
+            const list = document.getElementById('agentsList');
+            list.innerHTML = '';
+            
+            if (agents.length === 0) {
+                list.innerHTML = '<div style="color: #9ca3af; text-align: center; padding: 1rem;">Waiting for agents...</div>';
+                return;
+            }
+            
+            agents.forEach(agent => {
+                const item = document.createElement('div');
+                item.className = 'agent-item' + (selectedAgent?.id === agent.id ? ' selected' : '');
+                item.onclick = () => selectAgent(agent);
+                
+                const batteryClass = agent.battery > 50 ? 'battery-high' : 
+                                    agent.battery > 20 ? 'battery-medium' : 'battery-low';
+                
+                item.innerHTML = `
+                    <div class="agent-header">
+                        <div class="agent-name">${agent.id}</div>
+                        <div class="agent-status">${agent.status}</div>
+                    </div>
+                    <div class="battery-bar">
+                        <div class="battery-fill ${batteryClass}" style="width: ${agent.battery}%"></div>
+                    </div>
+                `;
+                
+                list.appendChild(item);
+            });
+        }
+
+        function selectAgent(agent) {
+            selectedAgent = agent;
+            document.getElementById('commandsPanel').style.display = agent ? 'block' : 'none';
+            renderAgents();
+            render();
+        }
+
+        function sendCommand(command) {
+            if (ws && ws.readyState === WebSocket.OPEN && selectedAgent) {
+                ws.send(JSON.stringify({
+                    type: 'command',
+                    command: command,
+                    agentId: selectedAgent.id
+                }));
+                addMessage('Command', Sent: ${command} to ${selectedAgent.id});
+            } else {
+                addMessage('System', 'Not connected to SPADE - command ignored');
+            }
+        }
+
+        function toggleSimulation() {
+            isRunning = !isRunning;
+            const btn = document.getElementById('startBtn');
+            if (isRunning) {
+                btn.textContent = 'Pause Mission';
+                btn.className = 'btn-pause';
+            } else {
+                btn.textContent = 'Start Mission';
+                btn.className = 'btn-start';
+            }
+        }
+
+        function resetSimulation() {
+            agents = [];
+            resources = [];
+            hazards = [];
+            exploredCells = new Set();
+            selectedAgent = null;
+            renderAgents();
+            render();
+            addMessage('System', 'Visualization reset');
+        }
+
+        function render() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Grid
+            ctx.strokeStyle = '#374151';
+            ctx.lineWidth = 0.5;
+            for (let i = 0; i <= GRID_SIZE; i++) {
+                ctx.beginPath();
+                ctx.moveTo(i * CELL_SIZE, 0);
+                ctx.lineTo(i * CELL_SIZE, GRID_SIZE * CELL_SIZE);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(0, i * CELL_SIZE);
+                ctx.lineTo(GRID_SIZE * CELL_SIZE, i * CELL_SIZE);
+                ctx.stroke();
+            }
+
+            // Explored cells
+            ctx.fillStyle = 'rgba(59, 130, 246, 0.1)';
+            exploredCells.forEach(cell => {
+                const [x, y] = cell.split(',').map(Number);
+                ctx.fillRect(x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+            });
+
+            // Hazards
+            hazards.forEach(hazard => {
+                ctx.fillStyle = hazard.type === 'storm' ? 'rgba(239, 68, 68, 0.3)' : 'rgba(245, 158, 11, 0.3)';
+                ctx.beginPath();
+                ctx.arc(hazard.x * CELL_SIZE, hazard.y * CELL_SIZE, hazard.radius * CELL_SIZE, 0, 2 * Math.PI);
+                ctx.fill();
+            });
+
+            // Resources
+            resources.forEach(resource => {
+                ctx.fillStyle = resource.discovered ? '#10b981' : 'rgba(16, 185, 129, 0.3)';
+                ctx.beginPath();
+                ctx.arc(resource.x * CELL_SIZE, resource.y * CELL_SIZE, 4, 0, 2 * Math.PI);
+                ctx.fill();
+                
+                if (resource.discovered) {
+                    ctx.strokeStyle = '#10b981';
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                }
+            });
+
+            // Agents
+            agents.forEach(agent => {
+                ctx.fillStyle = agent.color || '#ffffff';
+                ctx.beginPath();
+                
+                if (agent.type === 'rover') {
+                    ctx.rect(agent.x * CELL_SIZE - 4, agent.y * CELL_SIZE - 4, 8, 8);
+                } else if (agent.type === 'drone') {
+                    ctx.moveTo(agent.x * CELL_SIZE, agent.y * CELL_SIZE - 5);
+                    ctx.lineTo(agent.x * CELL_SIZE + 4, agent.y * CELL_SIZE + 3);
+                    ctx.lineTo(agent.x * CELL_SIZE - 4, agent.y * CELL_SIZE + 3);
+                    ctx.closePath();
+                } else if (agent.type === 'base' || agent.type === 'satellite') {
+                    ctx.arc(agent.x * CELL_SIZE, agent.y * CELL_SIZE, 6, 0, 2 * Math.PI);
+                }
+                
+                ctx.fill();
+
+                // Battery bar
+                const batteryColor = agent.battery > 50 ? '#10b981' : 
+                                    agent.battery > 20 ? '#f59e0b' : '#ef4444';
+                ctx.fillStyle = batteryColor;
+                ctx.fillRect(
+                    agent.x * CELL_SIZE - 5,
+                    agent.y * CELL_SIZE + 8,
+                    (agent.battery / 100) * 10,
+                    2
+                );
+
+                // Selection highlight
+                if (selectedAgent?.id === agent.id) {
+                    ctx.strokeStyle = '#ffffff';
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.arc(agent.x * CELL_SIZE, agent.y * CELL_SIZE, 10, 0, 2 * Math.PI);
+                    ctx.stroke();
+                }
+            });
+        }
+
+        // Canvas click handler
+        canvas.addEventListener('click', function(e) {
+            const rect = canvas.getBoundingClientRect();
+            const x = (e.clientX - rect.left) / CELL_SIZE;
+            const y = (e.clientY - rect.top) / CELL_SIZE;
+
+            // Find clicked agent
+            const clicked = agents.find(agent => {
+                const dist = Math.sqrt(Math.pow(x - agent.x, 2) + Math.pow(y - agent.y, 2));
+                return dist < 1;
+            });
+
+            if (clicked) {
+                selectAgent(clicked);
+            }
+        });
+
+        // Render loop
+        setInterval(render, 100);
+    </script>
 </body>
 </html>
