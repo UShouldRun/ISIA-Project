@@ -31,11 +31,12 @@ class Rover(Agent):
         self.base_jid = base_jid
 
         # TODO: IMPLEMENT ENERGY CONSUMPTION
-        self.energy = 100
+        self.energy = MAX_ROVER_CHARGE
         self.path: List[Tuple[float, float]] = []
         self.goal: Optional[Tuple[float, float]] = None
         self.status = "idle"
         self.is_locked_by_bid = False
+        self.is_on_base = True
 
         self.move_step = move_step
         self.obstacle_radius = obstacle_radius
@@ -50,8 +51,35 @@ class Rover(Agent):
     # -------------------------------------------------------------------------
     # UTILITIES
     # -------------------------------------------------------------------------
-    # REMOVE send_msg method entirely - it doesn't work at agent level
+    class Charge(CyclicBehaviour):
 
+        async def run(self):
+            if self.is_on_base:
+
+                if self.energy == MAX_ROVER_CHARGE:
+                    # Not going to print to not cluster the logs
+                    # print(f"[{self.agent.name}] Rover Max charge reached - Current Charge: 100%")
+                    pass
+                else:
+                    if self.energy == MAX_ROVER_CHARGE * 0.75:
+                        print(f"[{self.agent.name}] Rover Charging - Current Charge: 75%")
+                    
+                    if self.energy == MAX_ROVER_CHARGE * 0.5:
+                        print(f"[{self.agent.name}] Rover Charging - Current Charge: 50%")
+
+                    if self.energy == MAX_ROVER_CHARGE * 0.25:
+                        print(f"[{self.agent.name}] Rover Charging - Current Charge: 25%")
+
+                    if self.energy == 0:
+                        # Lol nunca vai chegar aqui
+                        print(f"[{self.agent.name}] Rover Charging - Current Charge: 0%")
+
+                    self.energy += CHARGE_RATE_ENERGY_PER_SEC
+
+            await asyncio.sleep(1)
+
+
+    # REMOVE send_msg method entirely - it doesn't work at agent level
     def get_dpos(self, curr: Tuple[float, float], goal: Tuple[float, float]) -> Tuple[int, int]:
         """Compute one-step delta toward goal."""
         return (
@@ -161,6 +189,8 @@ class Rover(Agent):
                 rover.status = "moving"
                 rover.goal = eval(msg.body)["target"]
                 rover.is_locked_by_bid = False  # Unlock after acceptance
+                rover.is_on_base = False # Out of base
+
                 print(f"[{rover.name}] ACCEPTED mission to {rover.goal}")
 
             # Reject proposal → unlock and stay idle
@@ -295,4 +325,5 @@ class Rover(Agent):
         print(f"Initializing [{self.name}] rover.")
         self.add_behaviour(self.ReceiveMessages())
         self.add_behaviour(self.MoveAlongPath())
+        self.add_behaviour(self.Charge())
         print(f"[{self.name}] Rover initialized at {self.position}, waiting for path.")
