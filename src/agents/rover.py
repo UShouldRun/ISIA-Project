@@ -35,8 +35,11 @@ class Rover(Agent):
 
         # TODO: IMPLEMENT ENERGY CONSUMPTION
         self.energy = MAX_ROVER_CHARGE
+
+        self.curr = 0
         self.path: List[Tuple[float, float]] = []
         self.goal: Optional[Tuple[float, float]] = None
+
         self.status = "idle"
         self.is_locked_by_bid = False
         self.is_on_base = True
@@ -64,13 +67,39 @@ class Rover(Agent):
     async def try_go_around(self, goal: Tuple[float, float]) -> Optional[Tuple[float, float]]:
         """Try simple local avoidance: random offset around the obstacle."""
         for _ in range(5):
-            offset_x = random.uniform(-10, 10)
-            offset_y = random.uniform(-10, 10)
+            offset_x = random.uniform(-ROVER_SPEED_UNIT_PER_SEC, ROVER_SPEED_UNIT_PER_SEC)
+            offset_y = random.uniform(-ROVER_SPEED_UNIT_PER_SEC, ROVER_SPEED_UNIT_PER_SEC)
             candidate = (self.position[0] + offset_x, self.position[1] + offset_y)
             if not self.world.collides(self.jid, candidate):
                 print(f"{CYAN}[{self.name}] Avoiding obstacle locally → {candidate}{RESET}")
                 return candidate
         return None
+
+    async def find_path(self) -> str:
+        rover = self
+
+        rover.path = AStar.run(rover.map, rover.position, rover.goal)
+        if not rover.path:
+            print(f"{CYAN}[{rover.name}] Did not find path to the goal, rejecting mission{RESET}")
+            rover.status = "idle"
+            rover.goal = None
+            return "no_path"
+        print(f"{CYAN}[{rover.name}] Found path to the goal{RESET}")
+
+        distance = sum(
+            rover.calculate_distance(rover.path[i - 1], rover.path[i])
+            for i in range(1, len(rover.path))
+        )
+        if rover.energy < 1.10 * 2 * distance * ENERGY_PER_DISTANCE_UNIT:
+            print(f"{CYAN}[{rover.name}] Low on energy; rejecting mission to {rover.goal}{RESET}")
+            rover.status = "idle"
+            rover.goal = None
+            rover.path = []
+            return "not_enough_energy"
+
+        print(f"{CYAN}[{rover.name}] Found path to the goal and has enough energy; accepting mission to {rover.goal}{RESET}")
+        rover.status = "moving"
+        return "viable"
 
     def calculate_distance(self, pos1: Tuple[float, float], pos2: Tuple[float, float]) -> float:
         return sqrt((pos1[0] - pos2[0]) ** 2 + (pos1[1] - pos2[1]) ** 2)
@@ -153,13 +182,13 @@ class Rover(Agent):
                 return
 
             performative = msg.metadata.get("performative")
-            ontology = msg.metadata.get("ontology")
+            msg_type = msg.metadata.get("type")
             sender = str(msg.sender)
 
             # --------------------------
             # BASE → ROVER : Bid Request
             # --------------------------
-            if performative == "cfp" and ontology == "rover_bid_cfp":
+            if performative == "cfp" and msg_type == "rover_bid_cfp":
                 target_pos = eval(msg.body)
                 print(f"{CYAN}[{rover.name}] Received Bid request from Base for {target_pos}{RESET}")
 
@@ -168,7 +197,7 @@ class Rover(Agent):
                     # Already committed → refuse
                     reply = Message(
                         to=sender,
-                        metadata={"performative": "refuse", "ontology": "rover_bid_cfp"},
+                        metadata={"performative": "refuse", "type": "rover_bid_cfp"},
                         body=str({"reason": "busy or locked"})
                     )
                     await self.send(reply)
@@ -177,18 +206,32 @@ class Rover(Agent):
                 else:
                     # Rover is available → propose
                     rover.is_locked_by_bid = True  # lock it for this bid
+
+                    rover.goal = target_pos
+                    mission_status = await rover.find_path()
+                    if mission_status != "viable":
+                        rover.is_locked_by_bid = False
+                        reply = Message(
+                            to=sender,
+                            metadata={"performative": "refuse", "type": "rover_bid_cfp"},
+                            body=str({"reason": mission_status})
+                        )
+                        await self.send(reply)
+                        print(f"{CYAN}[{rover.name}] REFUSING mission at {target_pos} ({mission_status}){RESET}")
+                        return
+
                     estimated_mission_time = rover.compute_mission_time(target_pos)
                     proposal = {"cost": estimated_mission_time, "rover": str(rover.jid)}
                     reply = Message(
                         to=sender,
-                        metadata={"performative": "propose", "ontology": "rover_bid_cfp"},
+                        metadata={"performative": "propose", "type": "rover_bid_cfp"},
                         body=str(proposal)
                     )
                     await self.send(reply)
                     print(f"{CYAN}[{rover.name}] PROPOSING mission at {target_pos} with cost {estimated_mission_time:.2f}{RESET}")
 
             # Go to target
-            elif performative == "accept_proposal" and ontology == "rover_bid_cfp":
+            elif performative == "accept_proposal" and msg_type == "rover_bid_cfp":
                 rover.status = "moving"
                 rover.goal = eval(msg.body)["target"]
                 rover.is_locked_by_bid = False  # Unlock after acceptance
@@ -198,17 +241,17 @@ class Rover(Agent):
                 rover.add_behaviour(rover.MoveAlongPath())
 
             # Reject proposal → unlock and stay idle
-            elif performative == "reject_proposal" and ontology == "rover_bid_cfp":
+            elif performative == "reject_proposal" and msg_type == "rover_bid_cfp":
                 rover.is_locked_by_bid = False  # Unlock the rover
+                rover.goal = None
+                rover.path = []
                 print(f"{CYAN}[{rover.name}] REJECTED for mission at {eval(msg.body)['target']}{RESET}")
 
             await asyncio.sleep(1)
 
     class MoveAlongPath(CyclicBehaviour):
         async def on_start(self) -> None:
-            rover = self.agent
-            rover.path = AStar.run(rover.map, rover.position, rover.goal)
-            print(f"{CYAN}[{rover.name}] Found path to the goal{RESET}")
+            rover = self.agent 
 
             if rover.status == "moving":
                 print(f"{CYAN}[{rover.name}] Informing moving to goal to base{RESET}")
@@ -240,9 +283,10 @@ class Rover(Agent):
                 await asyncio.sleep(2)
                 return
 
-            next_step = rover.path[0]
+            next_step = rover.path[rover.curr]
             dx, dy = rover.get_dpos(rover.position, next_step)
             new_pos = (rover.position[0] + dx * rover.move_step, rover.position[1] + dy * rover.move_step)
+            rover.energy -= rover.calculate_distance((0, 0), (dx, dy)) * rover.move_step * ENERGY_PER_DISTANCE_UNIT
             await asyncio.sleep(rover.move_step / ROVER_SPEED_UNIT_PER_SEC)
 
             collisions = rover.world.collides(rover.jid, new_pos)
@@ -262,41 +306,44 @@ class Rover(Agent):
                 rover.position = new_pos
                 dist_to_next_step = rover.calculate_distance(rover.position, next_step)
                 if dist_to_next_step < 2 * rover.move_step:
-                    rover.path.pop(0)
+                    rover.curr += 1 if rover.status == "moving" else -1
 
-                print(f"{CYAN}[{rover.name}] {rover.status}... Current position: {rover.position}{RESET}")
+                print(f"{CYAN}[{rover.name}] {rover.status}... Current position: {rover.position}", end = '')
+                print(f", Energy: {(100 * rover.energy/MAX_ROVER_CHARGE):.1f}%", end = '')
+                print(f", Distance left: {rover.calculate_distance(rover.position, rover.goal)}{RESET}")
 
-                # Mission goal reached
-                if not rover.path:
-                    if rover.status == "moving":
-                        rover.status = "arrived"
-                        print(f"{CYAN}[{rover.name}] Arrived at mission goal {rover.goal}{RESET}")
-                        msg = Message(
-                            to=rover.base_jid,
-                            metadata={"performative": "inform", "type": "mission_complete"},
-                            body=str({"position": rover.position})
-                        )
-                        await self.send(msg)
+                if rover.status == "moving" and rover.curr == len(rover.path):
+                    rover.status = "arrived"
+                    print(f"{CYAN}[{rover.name}] Arrived at mission goal {rover.goal}{RESET}")
+                    msg = Message(
+                        to=rover.base_jid,
+                        metadata={"performative": "inform", "type": "mission_complete"},
+                        body=str({"position": rover.position})
+                    )
+                    await self.send(msg)
 
-                        rover.add_behaviour(rover.AnalyzeSoil())
+                    rover.add_behaviour(rover.AnalyzeSoil())
 
-                        self.kill()
-                        rover.goal = rover.base_position
-                        rover.status = "returning"
-                        rover.add_behaviour(rover.MoveAlongPath())
+                    self.kill()
+                    rover.goal = rover.base_position
+                    rover.status = "returning"
+                    rover.curr -= 1
+                    rover.add_behaviour(rover.MoveAlongPath())
 
-                    elif rover.status == "returning":
-                        rover.status = "idle"
-                        print(f"{CYAN}[{rover.name}] Returned to base successfully at {rover.position}{RESET}")
-                        msg = Message(
-                            to=rover.base_jid,
-                            metadata={"performative": "inform", "type": "rover_returned_to_base"},
-                            body=str({"position": rover.position})
-                        )
-                        await self.send(msg)
-                        self.kill()
+                elif rover.status == "returning" and rover.curr == 0:
+                    rover.status = "idle"
+                    rover.path = []
+                    rover.goal = None
+                    print(f"{CYAN}[{rover.name}] Returned to base successfully at {rover.position}{RESET}")
+                    msg = Message(
+                        to=rover.base_jid,
+                        metadata={"performative": "inform", "type": "rover_returned_to_base"},
+                        body=str({"position": rover.position})
+                    )
+                    await self.send(msg)
+                    self.kill()
 
-            await asyncio.sleep(2)
+            await asyncio.sleep(0.1)
 
     # -------------------------------------------------------------------------
     # NEW BEHAVIOUR — ANALYZE SOIL

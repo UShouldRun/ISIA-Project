@@ -114,7 +114,7 @@ def generate_world(config: Dict[str, Any], tag: str) -> Tuple[World, Map, Dict[s
     
     return world, world_map, base_centers, rover_positions, drone_positions
 
-async def simulate_hazards(world_map: 'Map', interval: int = 10):
+async def simulate_hazards(world_map: Map, interval: int = 10):
     def clear_storm() -> bool:
         """Resets the storm flag on all cells and returns True if any storm was cleared."""
         was_cleared = False
@@ -133,8 +133,7 @@ async def simulate_hazards(world_map: 'Map', interval: int = 10):
             print("[HAZARD] Previous storm subsided. Map cells reset.")
         
         # 3. Randomly introduce a new storm (e.g., 10% chance)
-        if random.random() < 0.10: 
-            
+        if random.random() < STORM_CHANCE: 
             # Choose a center for the storm
 
             center_x = random.randint(0, world_map.columns - 1)
@@ -211,7 +210,8 @@ async def main():
             base_jid,
             base_name,
             base_center,
-            rovers_for_this_base
+            rovers_for_this_base,
+            drone_jids
         )
         bases[base_jid] = base
         agents_to_start.append(base)

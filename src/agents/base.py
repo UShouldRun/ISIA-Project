@@ -19,13 +19,18 @@ class Base(Agent):
         jid: str,
         password: str,
         position: Tuple[float, float] = [0, 0],
-        rover_jids: List[str] = []
+        rover_jids: List[str] = [],
+        drone_jids: List[str] = []
     ) -> None:
         super().__init__(jid, password)
         self.position = tuple(position)
+
         # This list is from rovers and drones that are currently on the base.
         # When the agent levaes the base, we lose information ab out it and remove it from the list
+
         self.rovers = rover_jids   # List of rover JIDs that are on the base in this moment
+        self.drones = drone_jids
+
         self.resources = []        # List of detected resources
         self.pending_missions = [] # Queue of locations to explore
         self.proposals = {}
@@ -51,7 +56,7 @@ class Base(Agent):
             for rover_jid in base.rovers:
                 msg = Message(to=rover_jid)
                 msg.set_metadata("performative", "cfp")
-                msg.set_metadata("ontology", "rover_bid_cfp")
+                msg.set_metadata("type", "rover_bid_cfp")
                 msg.body = str(self.target_position)
                 await self.send(msg)
                 print(f"{MAGENTA}[{base.name}] CFP sent to {rover_jid} for mission at {self.target_position}{RESET}")
@@ -86,7 +91,7 @@ class Base(Agent):
 
         def on_refuse(self, message: Message):
             """Called when a rover refuses to bid."""
-            print(f"{MAGENTA}[{self.agent.name}] Rover {message.sender} refused to bid for mission at {self.target_position}{RESET}")
+            print(f"{MAGENTA}[{self.agent.name}] Rover {message.sender} refused to bid for mission at {self.target_position}: reason - {eval(message.body)}{RESET}")
 
         async def on_propose(self, message: Message):
             """
@@ -136,7 +141,7 @@ class Base(Agent):
             # Send the winner bid to the drone and wait for further communication
             accept_msg = Message(to=self.drone)
             accept_msg.set_metadata("performative", "propose")
-            accept_msg.set_metadata("ontology", "rover_bid_cfp")
+            accept_msg.set_metadata("type", "rover_bid_cfp")
             accept_msg.body = str({"target": self.target_position, "base": str(base.jid), "rover": str(best_sender), "cost": best_bid['cost']})
             print(f"{MAGENTA}[{base.name}] Sending winner bid to drone 'target': {self.target_position}, 'base': {base.jid}, 'rover': {best_sender}, 'cost': {best_bid['cost']}{RESET}")
             await self.send(accept_msg)
@@ -146,7 +151,7 @@ class Base(Agent):
                 if sender != best_sender:
                     reject_msg = Message(to=sender)
                     reject_msg.set_metadata("performative", "reject_proposal")
-                    reject_msg.set_metadata("ontology", "rover_bid_cfp")
+                    reject_msg.set_metadata("type", "rover_bid_cfp")
                     reject_msg.body = str({"target": self.target_position})
                     await self.send(reject_msg)
             base.proposals = {}
@@ -169,10 +174,10 @@ class Base(Agent):
                 if performative == "cfp" and msg_type == "rover_mission_cfp":
                     if not base.rovers:
                         drone_msg = Message(to=msg.sender)
-                        drone_msg.set_metadata("performative", "reject_proposal")
-                        drone_msg.set_metadata("ontology", "drone_bid_cfp")
-                        drone_msg.body = "No rovers available!"
-                        print(f"{MAGENTA}[{base.name}] Sending reject bid to drone, no rovers available {RESET}")
+                        drone_msg.set_metadata("performative", "refuse")
+                        drone_msg.set_metadata("type", "drone_bid_cfp")
+                        drone_msg.body = str({"reason": "no_rovers_available"})
+                        print(f"{MAGENTA}[{base.name}] Sending reject bid to drone, no rovers available{RESET}")
                         await self.send(drone_msg)
 
                     else:
@@ -190,7 +195,7 @@ class Base(Agent):
                     # Send accept to rover
                     accept_msg = Message(to=winning_rover)
                     accept_msg.set_metadata("performative", "accept_proposal")
-                    accept_msg.set_metadata("ontology", "rover_bid_cfp")
+                    accept_msg.set_metadata("type", "rover_bid_cfp")
                     accept_msg.body = str({"target": target_pos})
                     await self.send(accept_msg)
                 
@@ -201,17 +206,16 @@ class Base(Agent):
                     rejected_rover = target_data.get("rover")
                     print(f"{MAGENTA}[{base.name}] Bid rejected CFP from {sender} for target {target_pos}{RESET}")
 
-                    # Send reject to rover
-                    reject_msg = Message(to="best_sender")
+                    reject_msg = Message(to=rejected_rover)
                     reject_msg.set_metadata("performative", "reject_proposal")
-                    reject_msg.set_metadata("ontology", "rover_bid_cfp")
+                    reject_msg.set_metadata("type", "rover_bid_cfp")
                     await self.send(reject_msg)
 
                 if performative == "inform" and msg_type == "rover_leaving_base":
                     rover = msg.sender
                     print(f"{MAGENTA}[{base.name}] Rover {rover} leaving base{RESET}")
                     base.rovers.remove(rover)
-
+                    
                 if performative == "inform" and msg_type == "mission_complete":
                     rover = msg.sender
                     target_data = eval(msg.body)
@@ -229,6 +233,15 @@ class Base(Agent):
                     rover = msg.sender
                     print(f"{MAGENTA}[{base.name}] Rover {rover} returned to base{RESET}")
                     base.rovers.append(rover)
+
+                    if len(base.rovers) == 1:
+                        for drone in base.drones:
+                            has_rovers_msg = Message(to=drone)
+                            has_rovers_msg.set_metadata("performative", "inform")
+                            has_rovers_msg.set_metadata("type", "drone_bid_cfp")
+                            has_rovers_msg.body = str({"inform": "has_rovers_available"})
+                            print(f"{MAGENTA}[{base.name}] Sending inform bid to drone, rovers available{RESET}")
+                            await self.send(has_rovers_msg)
 
             await asyncio.sleep(1)
 

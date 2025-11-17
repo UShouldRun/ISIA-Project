@@ -21,7 +21,7 @@ class Drone(Agent):
         map_: Map,
         position: Tuple[float, float],
         known_bases: List[str],
-        orbit_height: float = 1000.0,
+        orbit_height: float = 1.0,
         scan_radius: float = 500.0
     ) -> None:
         super().__init__(jid, password)
@@ -98,22 +98,26 @@ class Drone(Agent):
             """
                 Send CFP to all bases
             """
-            for base_jid in self.agent.bases:
+            drone = self.agent
+
+            if not drone.bases:
+                print(f"{GREEN}[{drone.name}] No bases available. Trying later...{RESET}")
+                return
+
+            for base_jid in drone.bases:
                 msg = Message(to=base_jid)
                 msg.set_metadata("performative", "cfp")
                 msg.set_metadata("type", "rover_mission_cfp")
                 msg.body = str(self.target_position)
                 await self.send(msg)
-                print(f"{GREEN}[{self.agent.name}] CFP sent to {base_jid} for mission at {self.target_position}{RESET}")
+                print(f"{GREEN}[{drone.name}] CFP sent to {base_jid} for mission at {self.target_position}{RESET}")
 
             timeout = 4  # seconds to wait for bids
 
             start_time = asyncio.get_event_loop().time()
-            replies = []
 
             while asyncio.get_event_loop().time() - start_time < timeout:
                 msg = await self.receive(timeout=1)
-                replies.append(msg)
                 if msg:
                     perf = msg.metadata.get("performative")
                     if perf == "propose":
@@ -124,12 +128,27 @@ class Drone(Agent):
                         self.on_not_understood(msg)
                     elif perf == "failure":
                         self.on_failure(msg)
+                    elif perf == "inform":
+                        self.on_inform(msg)
 
-            await self.on_all_responses_received(replies)
+            await self.on_all_responses_received()
             
         def on_refuse(self, message: Message):
             """Called when a base refuses to bid."""
-            print(f"{GREEN}[{self.agent.name}] Base {message.sender} refused to bid for mission at {self.target_position}{RESET}")
+            drone = self.agent
+            reason = eval(message.body)["reason"]
+            print(f"{GREEN}[{drone.name}] Base {message.sender} refused to bid for mission at {self.target_position}: reason - {reason}{RESET}")
+            if reason == "no_rovers_available":
+               drone.bases.remove(message.sender) 
+
+        def on_inform(self, message: Message):
+            """Called when a base informs the drone."""
+            drone = self.agent
+            msg_info = eval(message.body)["inform"]
+            print(f"{GREEN}[{drone.name}] msg info {msg_info}{RESET}")
+            if msg_info == "has_rovers_available":
+                print(f"{GREEN}[{drone.name}] Base {message.sender} informed it has rovers available{RESET}")
+                drone.bases.append(message.sender)
 
         def on_failure(self, message: Message):
             """Called if a base fails during the negotiation."""
@@ -164,25 +183,26 @@ class Drone(Agent):
                 print(f"{GREEN}[{self.agent.name}] Invalid proposal format from {message.sender}. Body: {message.body}{RESET}")
 
 
-        async def on_all_responses_received(self, replies: List[Message]):
+        async def on_all_responses_received(self):
             """
             Called when all expected replies (proposes or refuses) are received,
             or the timeout has expired.
             """
-            print(f"{GREEN}[{self.agent.name}] All responses received for mission at {self.target_position}. Total replies: {len(replies)}{RESET}")
+            drone = self.agent
+            print(f"{GREEN}[{self.agent.name}] All responses received for mission at {self.target_position}.{RESET}")
 
-            if not self.agent.proposals:
-                print(f"{GREEN}[{self.agent.name}] No proposals received for mission at {self.target_position}. Retrying later.{RESET}")
+            if not drone.proposals:
+                print(f"{GREEN}[{drone.name}] No proposals received for mission at {self.target_position}. Retrying later.{RESET}")
                 # Clear proposals for the next negotiation
-                self.agent.proposals = {} 
+                drone.proposals = {} 
                 return
 
-            best_base, best_data = min(self.agent.proposals.items(), key=lambda x: x[1]["cost"])           
+            best_base, best_data = min(drone.proposals.items(), key=lambda x: x[1]["cost"])           
             min_cost = best_data['cost']
 
             if best_base:
                 # ACCEPT the best proposal
-                print(f"{GREEN}[{self.agent.name}] Accepting proposal from {best_base} with cost {min_cost}{RESET}")
+                print(f"{GREEN}[{drone.name}] Accepting proposal from {best_base} with cost {min_cost}{RESET}")
 
                 # Send the winner bid to the satelite and wait for further communication
                 accept_msg = Message(to=best_base)
@@ -193,9 +213,9 @@ class Drone(Agent):
                 await self.send(accept_msg)
 
                 # REJECT all other proposals
-                for base_jid, data in self.agent.proposals.items():
+                for base_jid, data in drone.proposals.items():
                     if base_jid != best_base:
-                        print(f"{GREEN}[{self.agent.name}] Rejecting proposal from {base_jid}{RESET}")
+                        print(f"{GREEN}[{drone.name}] Rejecting proposal from {base_jid}{RESET}")
                         reject_msg = Message(to=base_jid)
                         reject_msg.set_metadata("performative", "reject_proposal")
                         reject_msg.set_metadata("type", "rover_bid_rejected")
@@ -203,10 +223,10 @@ class Drone(Agent):
 
                         await self.send(reject_msg)
             else:
-                print(f"{GREEN}[{self.agent.name}] No suitable proposals received for mission at {self.target_position}. Retrying later.{RESET}")
+                print(f"{GREEN}[{drone.name}] No suitable proposals received for mission at {self.target_position}. Retrying later.{RESET}")
 
             # Clear proposals for the next negotiation
-            self.agent.proposals = {}
+            drone.proposals = {}
 
 
         async def on_inform(self, message: Message):
@@ -230,7 +250,7 @@ class Drone(Agent):
 
             #if msg:
                 # performative = msg.metadata.get("performative")
-                # ontology = msg.metadata.get("ontology")
+                # type = msg.metadata.get("type")
                 # sender = str(msg.sender).split("@")[0]
                 
                 # print(f"{GREEN}[{drone.name}] Message received from {sender} (type: ){RESET}")
@@ -239,7 +259,7 @@ class Drone(Agent):
 
     async def setup(self):
         print(f"{GREEN}Initializing [{self.name}] drone.{RESET}")
-        await asyncio.sleep(5)
+        await asyncio.sleep(2)
         self.add_behaviour(self.ScanTerrain())
         # self.add_behaviour(self.ReceiveMessages())
         print(f"{GREEN}[{self.name}] Drone online at orbit height {self.orbit_height} km{RESET}")
