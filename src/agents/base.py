@@ -207,6 +207,25 @@ class Base(Agent):
                     reject_msg.set_metadata("ontology", "rover_bid_cfp")
                     await self.send(reject_msg)
 
+                if performative == "inform" and msg_type == "rover_leaving_base":
+                    rover = msg.sender
+                    print(f"{MAGENTA}[{base.name}] Rover {rover} leaving base{RESET}")
+                    base.rovers.remove(rover)
+
+                if performative == "inform" and msg_type == "mission_complete":
+                    position = target_data.get("position")
+                    print(f"{MAGENTA}[{base.name}] Rover {rover} arrived at goal: current position {position}{RESET}")
+
+                if performative == "inform" and msg_type == "resources_found":
+                    target_data = eval(msg.body)
+                    position = target_data.get("position")
+                    resources = target_data.get("resources")
+                    print(f"{MAGENTA}[{base.name}] Rover {rover} found resources at goal: current position {position}, resources: {resources}{RESET}")
+
+                if performative == "inform" and msg_type == "rover_returned_to_base":
+                    rover = msg.sender
+                    print(f"{MAGENTA}[{base.name}] Rover {rover} returned to base{RESET}")
+                    base.rovers.append(rover)
 
             await asyncio.sleep(1)
 

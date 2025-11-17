@@ -24,11 +24,12 @@ class World:
         if obj in self.objects:
             self.objects.remove(obj)
 
-    def collides(self, id: int, pos: Tuple[float, float]) -> bool:
-        return any(
-            sqrt((pos[0] - obj.pos[0]) ** 2 + (pos[1] - obj.pos[1]) ** 2) <= COLLISION_RADIUS and id != obj.id
+    def collides(self, id: str, pos: Tuple[float, float]) -> bool:
+        return [
+            obj
             for obj in self.objects
-        )
+            if sqrt((pos[0] - obj.pos[0]) ** 2 + (pos[1] - obj.pos[1]) ** 2) <= COLLISION_RADIUS and id != obj.id
+        ]
 
     def __repr__(self):
         return f"World(objects={[repr(o) for o in self.objects]})"

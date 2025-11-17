@@ -4,14 +4,14 @@
     "tag": "localhost"
   },
   "world": {
-    "map_limit": [1000, 1000]
+    "map_limit": [100, 100]
   },
   "bases": [
     {
       "jid": "base1",
       "name": "base1",
-      "center": [100, 100],
-      "radius": 50,
+      "center": [30, 30],
+      "radius": 5,
       "password": "base1"
     }
   ],
@@ -19,7 +19,7 @@
     {
       "jid": "drone1",
       "name": "drone1",
-      "position": [500, 500],
+      "position": [50, 50],
       "known_bases": ["base1", "base2"],
       "password": "drone1"
     }
@@ -30,24 +30,7 @@
       "name": "rover1",
       "position": "random_in_base",
       "base": "base1",
-      "assigned_drone": "drone1",
       "password": "rover1"
-    },
-    {
-      "jid": "rover2",
-      "name": "rover2",
-      "position": "random_in_base",
-      "base": "base1",
-      "assigned_drone": "drone1",
-      "password": "rover2"
-    },
-    {
-      "jid": "rover3",
-      "name": "rover3",
-      "position": "random_in_base",
-      "base": "base2",
-      "assigned_drone": "drone2",
-      "password": "rover3"
     }
   ],
   "logging": {

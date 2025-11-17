@@ -1,13 +1,14 @@
 import random
 
 from heapq import heapify, heappop, heappush
+from collections import defaultdict
 from math import sqrt
 
-from typing import Tuple, List
+from typing import Tuple, List, Optional
 from heapq import *
 
 from .world import WorldObject
-from settings import YELLOW, RESET
+from settings import RED, GREEN, MAGENTA, YELLOW, RESET
 
 MapPos = Tuple[int, int]
 
@@ -45,6 +46,7 @@ class MapCell():
 class Map():
     def __init__(self, limit: Tuple[float, float]) -> None:
         self.graph:   int   = 0
+        self.visited: int   = 0
         self.rows:    int   = int(limit[0])
         self.columns: int   = int(limit[1])
         self.length:  float = limit[0]
@@ -100,6 +102,37 @@ class Map():
         i, j = self.normalize(pos)
         return (self.graph >> (i * self.columns + j)) & 1
 
+    def visit(self, pos: MapPos) -> None:
+        self.visited |= 1 << (pos[0] * self.columns + pos[1])
+
+    def is_visited(self, pos: MapPos) -> bool:
+        return (self.visited >> (pos[0] * self.columns + pos[1])) & 0b1
+
+    def clear_visited(self) -> None:
+        self.visited = 0
+
+    def count_visited(self) -> int:
+        count: int = 0
+        for i in range(self.rows):
+            for j in range(self.columns):
+                count += self.is_visited((i, j))
+        return count
+
+    def print(self, start: Optional[MapPos], goal: Optional[MapPos]) -> None:
+        for i in range(self.rows):
+            row: str = ""
+            for j in range(self.columns):
+                visited = 1 if self.is_visited((i, j)) else 0
+                color = RED
+                if (i, j) == start:
+                    color = YELLOW
+                elif (i, j) == goal:
+                    color = MAGENTA
+                elif self.is_visited((i, j)):
+                    color = GREEN
+                row += f"{color}{visited}"
+            print(row + RESET)
+
 class AStarNode():
     def __init__(self, pos: MapPos, score: float) -> None:
         self.pos   = pos
@@ -121,8 +154,12 @@ class AStar():
         return seq
 
     @staticmethod
-    def _heuristic(map: Map, curr: MapPos, next: MapPos) -> float:
-        return map.distance(curr, next) + map.grid[next[0]][next[1]].get_cost()
+    def _gScore(map: Map, curr: MapPos, neighbour: MapPos) -> float:
+        return map.distance(curr, neighbour) + map.grid[neighbour[0]][neighbour[1]].get_cost()
+
+    @staticmethod
+    def _heuristicScore(map: Map, curr: MapPos, goal: MapPos) -> float:
+        return map.distance(curr, goal) 
 
     @staticmethod
     def run(map: Map, start: Tuple[float, float], goal: Tuple[float, float]) -> List[Tuple[float, float]]:
@@ -131,36 +168,38 @@ class AStar():
         s: MapPos = map.normalize(start)
         g: MapPos = map.normalize(goal)
 
-        min_heap: List[MapPos] = []
+        min_heap: List[AStarNode] = []
         heapify(min_heap)
 
         path: dict[MapPos, MapPos] = {}
 
-        gScore: dict[MapPos, float] = {
-                (i, j): float("inf")
-                for i in range(map.length)
-                for j in range(map.height)
-            }
+        gScore: dict[MapPos, float] = defaultdict(lambda: float('inf'))
         gScore[s] = 0
         heappush(min_heap, AStarNode(s, gScore[s]))
 
-        fScore: dict[MapPos, float] = {
-                (i, j): float("inf")
-                for i in range(map.columns)
-                for j in range(map.rows)
-            }
-        fScore[s] = map.distance(s, g)
+        fScore: dict[MapPos, float] = defaultdict(lambda: float('inf'))
+        fScore[s] = AStar._heuristicScore(map, s, g)
 
+        count: int = 0
         while min_heap != []:
             curr: MapPos = heappop(min_heap).pos
-            print(f"{YELLOW}AStar[RUNNING]: curr = {map.rescale(curr)}, fScore = {fScore[curr]}{RESET}")
+            if map.is_visited(curr):
+                continue
+            map.visit(curr)
+            # map.print(s, g)
+            count += 1
+
+            print(f"{YELLOW}AStar[RUNNING]: visited = {count}, curr = {map.rescale(curr)}, gScore = {gScore[curr]}, fScore = {fScore[curr]}{RESET}")
             
-            if curr[0] == g[0] and curr[1] == g[1]:
+            if curr == g:
                 print(f"{YELLOW}AStar[FINISHING]: reconstructing path{RESET}")
-                return AStar._reconstruct(map, path, s, g)
+                map.clear_visited()
+                reconstructed_path = AStar._reconstruct(map, path, s, g)
+                print(reconstructed_path)
+                return reconstructed_path
 
             neighbours: List[MapPos] = filter(
-                    lambda pos: map.in_map(pos),
+                    lambda pos: map.in_map(pos) and not map.is_visited(pos),
                     [(curr[0] + dir_x, curr[1] + dir_y)
                      for dir_x, dir_y in [
                          (-1,-1), (0,-1), (1,-1), (1,0),
@@ -168,17 +207,17 @@ class AStar():
                     ]]
                 )
             for neighbour in neighbours:
-                tentative_gScore: float = gScore[curr] + AStar._heuristic(map, curr, neighbour)
-                if tentative_gScore == float('inf'):
-                    continue
+                tentative_gScore: float = (
+                    gScore[curr] +
+                    AStar._gScore(map, curr, neighbour)
+                )
 
                 if tentative_gScore < gScore[neighbour]:
                     path[neighbour]   = curr
                     gScore[neighbour] = tentative_gScore
-                    fScore[neighbour] = tentative_gScore + AStar._heuristic(map, neighbour, g)
-
-                    if neighbour not in min_heap:
-                        heappush(min_heap, AStarNode(neighbour, fScore[neighbour]))
+                    fScore[neighbour] = tentative_gScore + AStar._heuristicScore(map, neighbour, g)
+                    heappush(min_heap, AStarNode(neighbour, fScore[neighbour]))
 
         print(f"{YELLOW}AStar[FINISHING]: did not find path{RESET}")
+        map.clear_visited()
         return []

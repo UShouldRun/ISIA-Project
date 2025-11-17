@@ -23,7 +23,7 @@ class Rover(Agent):
         map: Map,
         base_jid: str,
         base_position: Tuple[float, float],
-        move_step: float = 5.0,
+        move_step: float = 1.0,
         obstacle_radius: float = 5.0,
     ) -> None:
         super().__init__(jid, password)
@@ -210,6 +210,15 @@ class Rover(Agent):
             rover.path = AStar.run(rover.map, rover.position, rover.goal)
             print(f"{CYAN}[{rover.name}] Found path to the goal{RESET}")
 
+            if rover.status == "moving":
+                print(f"{CYAN}[{rover.name}] Informing moving to goal to base{RESET}")
+                msg = Message(
+                    to=rover.base_jid,
+                    metadata={"performative": "inform", "type": "rover_leaving_base"},
+                    body=str({"goal": rover.goal})
+                )
+                await self.send(msg)
+
         async def run(self):
             rover = self.agent
 
@@ -234,10 +243,12 @@ class Rover(Agent):
             next_step = rover.path[0]
             dx, dy = rover.get_dpos(rover.position, next_step)
             new_pos = (rover.position[0] + dx * rover.move_step, rover.position[1] + dy * rover.move_step)
-            await asyncio.sleep(rover.move_step / ROVER_SPEED_UNIT_PER_SECOND)
+            await asyncio.sleep(rover.move_step / ROVER_SPEED_UNIT_PER_SEC)
 
-            if rover.world.collides(rover.jid, new_pos):
-                print(f"{CYAN}[{rover.name}] Collision detected near {new_pos}{RESET}")
+            collisions = rover.world.collides(rover.jid, new_pos)
+            s_collisions = len(collisions)
+            if s_collisions > 0 and not (s_collisions == 1 and collisions[0].id == rover.base_jid):
+                print(f"{CYAN}[{rover.name}] Collision detected near {new_pos}, collisions: {collisions}{RESET}")
 
                 alt = await rover.try_go_around(next_step)
                 if alt:
@@ -249,8 +260,8 @@ class Rover(Agent):
 
             else:
                 rover.position = new_pos
-                dist_to_next_step = self.calculate_distance(rover.position, next_step)
-                if dist_to_next_step < 5:
+                dist_to_next_step = rover.calculate_distance(rover.position, next_step)
+                if dist_to_next_step < 2 * rover.move_step:
                     rover.path.pop(0)
 
                 print(f"{CYAN}[{rover.name}] {rover.status}... Current position: {rover.position}{RESET}")
@@ -262,27 +273,29 @@ class Rover(Agent):
                         print(f"{CYAN}[{rover.name}] Arrived at mission goal {rover.goal}{RESET}")
                         msg = Message(
                             to=rover.base_jid,
-                            metadata={"performative": "inform", "ontology": "mission_complete"},
+                            metadata={"performative": "inform", "type": "mission_complete"},
                             body=str({"position": rover.position})
                         )
                         await self.send(msg)
 
                         rover.add_behaviour(rover.AnalyzeSoil())
 
+                        self.kill()
                         rover.goal = rover.base_position
                         rover.status = "returning"
+                        rover.add_behaviour(rover.MoveAlongPath())
 
                     elif rover.status == "returning":
                         rover.status = "idle"
                         print(f"{CYAN}[{rover.name}] Returned to base successfully at {rover.position}{RESET}")
                         msg = Message(
                             to=rover.base_jid,
-                            metadata={"performative": "inform", "ontology": "returned_to_base"},
+                            metadata={"performative": "inform", "type": "rover_returned_to_base"},
                             body=str({"position": rover.position})
                         )
                         await self.send(msg)
+                        self.kill()
 
-            self.kill()
             await asyncio.sleep(2)
 
     # -------------------------------------------------------------------------
@@ -300,7 +313,7 @@ class Rover(Agent):
             if found_resources:
                 msg = Message(
                     to=rover.base_jid,
-                    metadata={"performative": "inform", "ontology": "resources_found"},
+                    metadata={"performative": "inform", "type": "resources_found"},
                     body=str({"position": rover.position, "resources": found_resources})
                 )
                 await self.send(msg)

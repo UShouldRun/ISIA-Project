@@ -57,7 +57,7 @@ class Drone(Agent):
             drone = self.agent
 
             # Move scanning window
-            drone.current_scan_position[0] += 100
+            drone.current_scan_position[0] += drone.map.length // 20
             if drone.current_scan_position[0] > drone.map.length:
                 drone.current_scan_position[0] = 0
                 drone.current_scan_position[1] += 100
