@@ -5,6 +5,7 @@ import asyncio
 import random
 from spade.message import Message
 
+<<<<<<< Updated upstream
 class Rover(Agent):
     def __init__(self, jid, password, position=(0, 0), base_position=(0, 0), energy=100):
         super().__init__(jid, password)
@@ -13,6 +14,102 @@ class Rover(Agent):
         self.energy = energy
         self.goal = None
         self.detected_resources = []
+=======
+from world.world import World, WorldObject
+from visualization_mixin import VisualizationMixin, VisualizationBehaviour
+
+from settings import *
+
+class Rover(VisualizationMixin, Agent):
+    def __init__(
+        self,
+        jid: str,
+        password: str,
+        position: Tuple[float, float],
+        world: World,
+        assigned_drone: str,
+        base_jid: str,
+        move_step: float = 5.0,
+        obstacle_radius: float = 5.0,
+        viz_server=None
+    ) -> None:
+        super().__init__(jid, password)
+        self.position = position
+        self.world = world
+        self.assigned_drone = assigned_drone
+        self.base_jid = base_jid
+
+        if viz_server:
+            self.setup_visualization(
+                viz_server=viz_server,
+                agent_type='rover',
+                color='#3b82f6'
+            )
+        # TODO: IMPLEMENT ENERGY CONSUMPTION
+        self.energy = 100
+        self.path: List[Tuple[float, float]] = []
+        self.goal: Optional[Tuple[float, float]] = None
+        self.status = "idle"
+        self.is_locked_by_bid = False
+
+        self.move_step = move_step
+        self.obstacle_radius = obstacle_radius
+
+        # Resource detection probabilities
+        self.resource_probs = {
+            "iron": 0.3,        # 30% chance
+            "silicon": 0.2,     # 20% chance
+            "water_ice": 0.1,   # 10% chance
+        }
+
+    # -------------------------------------------------------------------------
+    # UTILITIES
+    # -------------------------------------------------------------------------
+    async def send_msg(
+        self,
+        to: str,
+        performative: str,
+        ontology: str,
+        body: str,
+    ):
+        """Unified FIPA-compliant message sending."""
+        msg = Message(
+            to=to,
+            metadata={"performative": performative, "ontology": ontology},
+            body=body,
+        )
+        await self.send(msg)
+        print(f"[{self.name}] → {to} ({performative}/{ontology}): {body}")
+
+    def get_dpos(self, curr: Tuple[float, float], goal: Tuple[float, float]) -> Tuple[int, int]:
+        """Compute one-step delta toward goal."""
+        return (
+            1 if curr[0] < goal[0] else -1 if curr[0] > goal[0] else 0,
+            1 if curr[1] < goal[1] else -1 if curr[1] > goal[1] else 0,
+        )
+
+    async def try_go_around(self, goal: Tuple[float, float]) -> Optional[Tuple[float, float]]:
+        """Try simple local avoidance: random offset around the obstacle."""
+        for _ in range(5):
+            offset_x = random.uniform(-10, 10)
+            offset_y = random.uniform(-10, 10)
+            candidate = (self.position[0] + offset_x, self.position[1] + offset_y)
+            if not self.world.collides(self.jid, candidate):
+                print(f"[{self.name}] Avoiding obstacle locally → {candidate}")
+                return candidate
+        return None
+
+    def calculate_distance(self, pos1: Tuple[float, float], pos2: Tuple[float, float]) -> float:
+        return sqrt((pos1[0] - pos2[0]) ** 2 + (pos1[1] - pos2[1]) ** 2)
+
+    def calculate_pathfinding_cost(self, start_pos: Tuple[float, float], target_pos: Tuple[float, float]) -> float:
+            """
+            Slightly randomized Euclidean distance.
+            """
+            euclidean_dist = self.calculate_distance(start_pos, target_pos)
+            # Simulate complexity by making the pathfinding distance 10-30% longer than straight-line
+            return euclidean_dist * random.uniform(1.1, 1.3)
+>>>>>>> Stashed changes
 
     class WaitForMission(CyclicBehaviour):
         async def run(self):
@@ -121,8 +218,17 @@ class Rover(Agent):
             await asyncio.sleep(1)
 
     async def setup(self):
+<<<<<<< Updated upstream
         print(f"[{self.name}] Started in position {self.position}")
         self.add_behaviour(self.Communicate())
         self.add_behaviour(self.WaitForMission())
         self.add_behaviour(self.DetectResources())
 
+=======
+        print(f"[{self.name}] Rover initialized at {self.position}, waiting for path.")
+        if hasattr(self, 'viz_server'):
+            viz_behaviour = VisualizationBehaviour(update_interval=0.1)
+            self.add_behaviour(viz_behaviour)
+        self.add_behaviour(self.ReceiveMessages())
+        self.add_behaviour(self.MoveAlongPath())
+>>>>>>> Stashed changes
