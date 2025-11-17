@@ -213,10 +213,13 @@ class Base(Agent):
                     base.rovers.remove(rover)
 
                 if performative == "inform" and msg_type == "mission_complete":
+                    rover = msg.sender
+                    target_data = eval(msg.body)
                     position = target_data.get("position")
                     print(f"{MAGENTA}[{base.name}] Rover {rover} arrived at goal: current position {position}{RESET}")
 
                 if performative == "inform" and msg_type == "resources_found":
+                    rover = msg.sender
                     target_data = eval(msg.body)
                     position = target_data.get("position")
                     resources = target_data.get("resources")

@@ -59,7 +59,7 @@ def random_pos_in_base(world: World, base_name: str, base_centers: Dict[str, Tup
     print("[WARNING] Could not find collision-free position, using fallback")
     return (base_center[0], base_center[1])
 
-def generate_world(config: Dict[str, Any]) -> Tuple[World, Map, Dict[str, Tuple[float, float]], List[Tuple[float, float]]]:
+def generate_world(config: Dict[str, Any], tag: str) -> Tuple[World, Map, Dict[str, Tuple[float, float]], List[Tuple[float, float]]]:
     """Generate the world based on configuration."""
     world_config = config.get("world", {})
     base_configs = config.get("bases", [])
@@ -83,7 +83,7 @@ def generate_world(config: Dict[str, Any]) -> Tuple[World, Map, Dict[str, Tuple[
         
         base_centers[base_name] = base_center
         base_radii[base_name] = base_radius
-        world.objects.append(WorldObject(f"{base_name}_obj", base_center))
+        world.objects.append(WorldObject(f"{base_config["jid"]}@{tag}", base_center))
         
     # --- Process rover positions ---
     rover_positions = []
@@ -102,7 +102,7 @@ def generate_world(config: Dict[str, Any]) -> Tuple[World, Map, Dict[str, Tuple[
     # --- Register rover world objects ---
     for i, (rover_config, pos) in enumerate(zip(rover_configs, rover_positions), start=1):
         rover_name = rover_config.get("name", f"rover{i}")
-        world.objects.append(WorldObject(f"{rover_name}_obj", pos))
+        world.objects.append(WorldObject(f"{rover_config["jid"]}@{tag}", pos))
     
     # --- Process drone positions ---
     drone_positions = []
@@ -110,7 +110,7 @@ def generate_world(config: Dict[str, Any]) -> Tuple[World, Map, Dict[str, Tuple[
         pos = tuple(drone_config.get("position", [500, 500]))
         drone_positions.append(pos)
         drone_name = drone_config.get("name", drone_config["jid"])
-        world.objects.append(WorldObject(f"{drone_name}_obj", pos))
+        world.objects.append(WorldObject(f"{drone_config["jid"]}@{tag}", pos))
     
     return world, world_map, base_centers, rover_positions, drone_positions
 
@@ -183,7 +183,7 @@ async def main():
     rover_configs = config.get("rovers", [])
     
     # --- WORLD INITIALIZATION ---
-    world, world_map, base_centers, rover_positions, drone_positions = generate_world(config)
+    world, world_map, base_centers, rover_positions, drone_positions = generate_world(config, tag)
     
     # --- BUILD JID MAPS ---
     base_jids = {b["jid"]: f"{b['jid']}@{tag}" for b in base_configs}
