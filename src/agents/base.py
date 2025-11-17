@@ -238,14 +238,13 @@ class Base(Agent):
                     print(f"{MAGENTA}[{base.name}] Rover {str(rover).split("@")[0]} returned to base{RESET}")
                     base.rovers.append(rover)
 
-                    if len(base.rovers) == 1:
-                        for drone in base.drones:
-                            has_rovers_msg = Message(to=drone)
-                            has_rovers_msg.set_metadata("performative", "inform")
-                            has_rovers_msg.set_metadata("type", "drone_bid_cfp")
-                            has_rovers_msg.body = str({"inform": "has_rovers_available"})
-                            print(f"{MAGENTA}[{base.name}] Sending inform bid to drone, rovers available{RESET}")
-                            await self.send(has_rovers_msg)
+                    for drone in base.drones:
+                        has_rovers_msg = Message(to=drone)
+                        has_rovers_msg.set_metadata("performative", "inform")
+                        has_rovers_msg.set_metadata("type", "drone_bid_cfp")
+                        has_rovers_msg.body = str({"inform": "has_rovers_available"})
+                        print(f"{MAGENTA}[{base.name}] Sending inform bid to {drone}, rovers available{RESET}")
+                        await self.send(has_rovers_msg)
 
             await asyncio.sleep(1)
 

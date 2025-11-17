@@ -79,10 +79,14 @@ class Drone(Agent):
                     drone.areas_of_interest.append(scan_pos)
                     print(f"{GREEN}[{drone.name}] Area of interest detected at {scan_pos}{RESET}")
                     
-                    # Request mission x
-                    drone.add_behaviour(drone.RequestAgentForMission(scan_pos))
+                    if not drone.bases:
+                        print(f"{GREEN}[{drone.name}] No bases available. Trying later...{RESET}")
+                        self.kill()
+                        drone.add_behaviour(drone.RecheckBaseAvailability(scan_pos))
+                        return
 
-                    await asyncio.sleep(10)
+                    drone.add_behaviour(drone.RequestAgentForMission(scan_pos))
+                    self.kill()
 
     # Start a FIPA contract-net protocol with all the bases 
     # Get the bids from the bases
@@ -102,11 +106,7 @@ class Drone(Agent):
                 Send CFP to all bases
             """
             drone = self.agent
-
-            if not drone.bases:
-                print(f"{GREEN}[{drone.name}] No bases available. Trying later...{RESET}")
-                return
-
+ 
             for base_jid in drone.bases:
                 msg = Message(to=base_jid)
                 msg.set_metadata("performative", "cfp")
@@ -135,6 +135,7 @@ class Drone(Agent):
                         self.on_inform(msg)
 
             await self.on_all_responses_received()
+            drone.add_behaviour(drone.ScanTerrain())
             
         def on_refuse(self, message: Message):
             """Called when a base refuses to bid."""
@@ -150,6 +151,11 @@ class Drone(Agent):
             drone = self.agent
             msg_info = eval(message.body)["inform"]
             print(f"{GREEN}[{drone.name}] message info {msg_info}{RESET}") 
+
+            if msg_info == "has_rovers_available":
+                print(f"{GREEN}[{drone.name}] Base {sender} informed it has rovers available{RESET}")
+                drone.non_available_bases.remove(msg.sender)
+                drone.bases.append(msg.sender)
 
         def on_failure(self, message: Message):
             """Called if a base fails during the negotiation."""
@@ -229,7 +235,6 @@ class Drone(Agent):
             # Clear proposals for the next negotiation
             drone.proposals = {}
 
-
         async def on_inform(self, message: Message):
             """
             Called when the winning base sends an INFORM,
@@ -262,6 +267,18 @@ class Drone(Agent):
                         print(f"{GREEN}[{drone.name}] Base {sender} informed it has rovers available{RESET}")
                         drone.non_available_bases.remove(msg.sender)
                         drone.bases.append(msg.sender)
+
+    class RecheckBaseAvailability(CyclicBehaviour):
+        async def run(self):
+            drone = self.agent
+            await asyncio.sleep(30)
+
+            print(f"{GREEN}[{drone.name}] preparing to check base availability{RESET}")
+            drone.bases.extend(drone.non_available_bases)
+            drone.non_available_bases = []
+
+            drone.add_behaviour(drone.ScanTerrain())
+            self.kill()
 
     async def setup(self):
         print(f"{GREEN}Initializing [{self.name}] drone.{RESET}")

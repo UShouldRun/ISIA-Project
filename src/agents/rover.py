@@ -253,6 +253,7 @@ class Rover(VisualizationMixin, Agent):
             # Reject proposal → unlock and stay idle
             elif performative == "reject_proposal" and msg_type == "rover_bid_cfp":
                 rover.is_locked_by_bid = False  # Unlock the rover
+                rover.status = "idle"
                 rover.goal = None
                 rover.path = []
                 print(f"{CYAN}[{rover.name}] REJECTED for mission at {eval(msg.body)['target']}{RESET}")
@@ -264,6 +265,7 @@ class Rover(VisualizationMixin, Agent):
                 rover.path = eval(msg.body)
                 rover.goal = rover.path[-1] if rover.path else None
                 rover.status = "returning"
+                rover.is_locked_by_bid = False
                 print(f"[{rover.name}] Received return path ({len(rover.path)} steps) to base.")
 
             await asyncio.sleep(1)

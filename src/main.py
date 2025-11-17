@@ -54,7 +54,7 @@ def random_pos_in_base(world: World, base_name: str, base_centers: Dict[str, Tup
     for _ in range(max_attempts):
         x = random.uniform(base_center[0] - base_radius, base_center[0] + base_radius)
         y = random.uniform(base_center[1] - base_radius, base_center[1] + base_radius)
-        if all(((x - o.pos[0]) ** 2 + (y - o.pos[1]) ** 2) ** 0.5 > 10 for o in world.objects):
+        if all(((x - o.pos[0]) ** 2 + (y - o.pos[1]) ** 2) ** 0.5 > 2 for o in world.objects):
             return (x, y)
     # Fallback if collision-free position not found
     print("[WARNING] Could not find collision-free position, using fallback")
