@@ -21,7 +21,7 @@ class Drone(Agent):
         map_: Map,
         position: Tuple[float, float],
         known_bases: List[str],
-        orbit_height: float = 1.0,
+        height: float = 1.0,
         scan_radius: float = 500.0
     ) -> None:
         super().__init__(jid, password)
@@ -29,9 +29,12 @@ class Drone(Agent):
         self.map = map_
         self.position = position
 
-        self.orbit_height = orbit_height
+        self.height = height
         self.scan_radius = scan_radius
+
         self.bases = known_bases
+        self.non_available_bases = []
+
         self.scanned_areas = []  # Areas already scanned
         self.areas_of_interest = []  # Detected areas that need exploration
         self.current_scan_position = [0, 0]
@@ -137,26 +140,24 @@ class Drone(Agent):
             """Called when a base refuses to bid."""
             drone = self.agent
             reason = eval(message.body)["reason"]
-            print(f"{GREEN}[{drone.name}] Base {message.sender} refused to bid for mission at {self.target_position}: reason - {reason}{RESET}")
+            print(f"{GREEN}[{drone.name}] Base {str(message.sender).split("@")[0]} refused to bid for mission at {self.target_position}: reason - {reason}{RESET}")
             if reason == "no_rovers_available":
                drone.bases.remove(message.sender) 
+               drone.non_available_bases.append(message.sender)
 
         def on_inform(self, message: Message):
             """Called when a base informs the drone."""
             drone = self.agent
             msg_info = eval(message.body)["inform"]
-            print(f"{GREEN}[{drone.name}] msg info {msg_info}{RESET}")
-            if msg_info == "has_rovers_available":
-                print(f"{GREEN}[{drone.name}] Base {message.sender} informed it has rovers available{RESET}")
-                drone.bases.append(message.sender)
+            print(f"{GREEN}[{drone.name}] message info {msg_info}{RESET}") 
 
         def on_failure(self, message: Message):
             """Called if a base fails during the negotiation."""
-            print(f"{GREEN}[{self.agent.name}] Base {message.sender} failed during the contract net protocol.{RESET}")
+            print(f"{GREEN}[{self.agent.name}] Base {str(message.sender).split("@")[0]} failed during the contract net protocol.{RESET}")
 
         def on_not_understood(self, message: Message):
             """Called if a base doesn't understand the CFP."""
-            print(f"{GREEN}[{self.agent.name}] Base {message.sender} did not understand the CFP.{RESET}")
+            print(f"{GREEN}[{self.agent.name}] Base {str(message.sender).split("@")[0]} did not understand the CFP.{RESET}")
 
         async def on_propose(self, message: Message):
             """
@@ -243,23 +244,28 @@ class Drone(Agent):
             # with the final rover assignment details.
             pass
 
-    # class ReceiveMessages(CyclicBehaviour):
-        # async def run(self):
-            # drone = self.agent
-            # msg = await self.receive(timeout=5)
+    class ReceiveMessages(CyclicBehaviour):
+        async def run(self):
+            drone = self.agent
+            msg = await self.receive()
 
-            #if msg:
-                # performative = msg.metadata.get("performative")
-                # type = msg.metadata.get("type")
-                # sender = str(msg.sender).split("@")[0]
-                
-                # print(f"{GREEN}[{drone.name}] Message received from {sender} (type: ){RESET}")
+            if msg:
+                perf = msg.metadata.get("performative")
+                msg_type = msg.metadata.get("type")
+                sender = str(msg.sender).split("@")[0]
+              
+                print(f"{GREEN}[{drone.name}] Message received from {sender} (type: {msg_type}){RESET}")
 
-            # await asyncio.sleep(1)
+                if perf == "inform":
+                    msg_info = eval(msg.body)["inform"]
+                    if msg_info == "has_rovers_available":
+                        print(f"{GREEN}[{drone.name}] Base {sender} informed it has rovers available{RESET}")
+                        drone.non_available_bases.remove(msg.sender)
+                        drone.bases.append(msg.sender)
 
     async def setup(self):
         print(f"{GREEN}Initializing [{self.name}] drone.{RESET}")
         await asyncio.sleep(2)
         self.add_behaviour(self.ScanTerrain())
-        # self.add_behaviour(self.ReceiveMessages())
-        print(f"{GREEN}[{self.name}] Drone online at orbit height {self.orbit_height} km{RESET}")
+        self.add_behaviour(self.ReceiveMessages())
+        print(f"{GREEN}[{self.name}] Drone online at height {self.height} km{RESET}")

@@ -1,7 +1,7 @@
 import asyncio
 import random
 
-from collections import deque
+from collections import deque, defaultdict
 from math import sqrt
 from typing import Tuple, List, Dict, Optional
 
@@ -31,7 +31,7 @@ class Base(Agent):
         self.rovers = rover_jids   # List of rover JIDs that are on the base in this moment
         self.drones = drone_jids
 
-        self.resources = []        # List of detected resources
+        self.resources = defaultdict(lambda: { "count": 0, "positions": [] }) # Dict of detected resources
         self.pending_missions = [] # Queue of locations to explore
         self.proposals = {}
 
@@ -83,15 +83,15 @@ class Base(Agent):
 
         def on_failure(self, message: Message):
             """Called if a rover fails during the negotiation."""
-            print(f"{MAGENTA}[{self.agent.name}] Rover {message.sender} failed during the contract net protocol.{RESET}")
+            print(f"{MAGENTA}[{self.agent.name}] Rover {str(message.sender).split("@")[0]} failed during the contract net protocol.{RESET}")
 
         def on_not_understood(self, message: Message):
             """Called if a rover doesn't understand the CFP."""
-            print(f"{MAGENTA}[{self.agent.name}] Rover {message.sender} did not understand the CFP.{RESET}")
+            print(f"{MAGENTA}[{self.agent.name}] Rover {str(message.sender).split("@")[0]} did not understand the CFP.{RESET}")
 
         def on_refuse(self, message: Message):
             """Called when a rover refuses to bid."""
-            print(f"{MAGENTA}[{self.agent.name}] Rover {message.sender} refused to bid for mission at {self.target_position}: reason - {eval(message.body)}{RESET}")
+            print(f"{MAGENTA}[{self.agent.name}] Rover {str(message.sender).split("@")[0]} refused to bid for mission at {self.target_position}: reason - {eval(message.body)}{RESET}")
 
         async def on_propose(self, message: Message):
             """
@@ -213,25 +213,29 @@ class Base(Agent):
 
                 if performative == "inform" and msg_type == "rover_leaving_base":
                     rover = msg.sender
-                    print(f"{MAGENTA}[{base.name}] Rover {rover} leaving base{RESET}")
+                    print(f"{MAGENTA}[{base.name}] Rover {str(rover).split("@")[0]} leaving base{RESET}")
                     base.rovers.remove(rover)
                     
                 if performative == "inform" and msg_type == "mission_complete":
                     rover = msg.sender
                     target_data = eval(msg.body)
                     position = target_data.get("position")
-                    print(f"{MAGENTA}[{base.name}] Rover {rover} arrived at goal: current position {position}{RESET}")
+                    print(f"{MAGENTA}[{base.name}] Rover {str(rover).split("@")[0]} arrived at goal: current position {position}{RESET}")
 
                 if performative == "inform" and msg_type == "resources_found":
                     rover = msg.sender
                     target_data = eval(msg.body)
                     position = target_data.get("position")
                     resources = target_data.get("resources")
-                    print(f"{MAGENTA}[{base.name}] Rover {rover} found resources at goal: current position {position}, resources: {resources}{RESET}")
+                    print(f"{MAGENTA}[{base.name}] Rover {str(rover).split("@")[0]} found resources at goal: current position {position}, resources: {resources}{RESET}")
+
+                    for resource in resources:
+                        base.resources[resource]["count"] += 1
+                        base.resources[resource]["positions"].append(position)
 
                 if performative == "inform" and msg_type == "rover_returned_to_base":
                     rover = msg.sender
-                    print(f"{MAGENTA}[{base.name}] Rover {rover} returned to base{RESET}")
+                    print(f"{MAGENTA}[{base.name}] Rover {str(rover).split("@")[0]} returned to base{RESET}")
                     base.rovers.append(rover)
 
                     if len(base.rovers) == 1:
@@ -264,3 +268,15 @@ class Base(Agent):
     async def setup(self):
         print(f"{MAGENTA}[{self.name}] Base operational at position {self.position}{RESET}")
         self.add_behaviour(self.ReceiveMessages())
+
+    async def stop(self):
+        """Called when agent is being stopped"""
+        print(f"{MAGENTA}[{self.name}] Base shutting down...{RESET}")
+        print(f"{MAGENTA}Collected...{RESET}")
+        for resource, value in self.resources:
+            print(f"{MAGENTA}  Found {resource}:{RESET}")
+            print(f"{MAGENTA}    count = {value["count"]}{RESET}")
+            print(f"{MAGENTA}    positions = {value["positions"]}{RESET}")
+                
+        # Call parent's stop
+        await super().stop()

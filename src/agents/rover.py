@@ -151,19 +151,19 @@ class Rover(Agent):
 
             if rover.is_on_base:
                 if MAX_ROVER_CHARGE * 0.97 <= rover.energy <= MAX_ROVER_CHARGE * 0.99:
-                    print(f"[{self.agent.name}] Rover Max charge reached - Current Charge: 100%")
+                    print(f"{CYAN}[{self.agent.name}] Rover Max charge reached - Current Charge: 100%{RESET}")
 
                 elif MAX_ROVER_CHARGE * 0.75 <= rover.energy <= MAX_ROVER_CHARGE * 0.80 :
-                    print(f"[{self.agent.name}] Rover Charging - Current Charge: 75%")
+                    print(f"{CYAN}[{self.agent.name}] Rover Charging - Current Charge: 75%{RESET}")
                 
                 elif MAX_ROVER_CHARGE * 0.5 <= rover.energy <= MAX_ROVER_CHARGE * 0.55:
-                    print(f"[{self.agent.name}] Rover Charging - Current Charge: 50%")
+                    print(f"{CYAN}[{self.agent.name}] Rover Charging - Current Charge: 50%{RESET}")
 
                 elif MAX_ROVER_CHARGE * 0.25 <= rover.energy <= MAX_ROVER_CHARGE * 0.30:
-                    print(f"[{self.agent.name}] Rover Charging - Current Charge: 25%")
+                    print(f"{CYAN}[{self.agent.name}] Rover Charging - Current Charge: 25%{RESET}")
 
                 elif rover.energy == 0:
-                    print(f"[{rover.name}] Rover Charging - Current Charge: 0%")
+                    print(f"{CYAN}[{rover.name}] Rover Charging - Current Charge: 0%{RESET}")
 
                 if rover.energy < MAX_ROVER_CHARGE:
                     rover.energy += CHARGE_RATE_ENERGY_PER_SEC
@@ -334,12 +334,16 @@ class Rover(Agent):
                     rover.status = "idle"
                     rover.path = []
                     rover.goal = None
+                    rover.is_on_base = True
+
                     print(f"{CYAN}[{rover.name}] Returned to base successfully at {rover.position}{RESET}")
+
                     msg = Message(
                         to=rover.base_jid,
                         metadata={"performative": "inform", "type": "rover_returned_to_base"},
                         body=str({"position": rover.position})
                     )
+
                     await self.send(msg)
                     self.kill()
 

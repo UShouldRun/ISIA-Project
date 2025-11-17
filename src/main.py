@@ -205,13 +205,17 @@ async def main():
             for r in rover_configs 
             if r.get("base", base_configs[0].get("name") if base_configs else None) == base_name
         ]
+        drones_for_this_base = [
+            drone_jids[d["jid"]]
+            for d in drone_configs
+        ]
         
         base = Base(
             base_jid,
             base_name,
             base_center,
             rovers_for_this_base,
-            drone_jids
+            drones_for_this_base
         )
         bases[base_jid] = base
         agents_to_start.append(base)
