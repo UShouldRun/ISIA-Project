@@ -13,7 +13,9 @@ from world.map import Map, AStar
 
 from settings import *
 
-class Rover(Agent):
+from agents.visualizator import VisualizationBehaviour, VisualizationMixin
+
+class Rover(VisualizationMixin, Agent):
     def __init__(
         self,
         jid: str,
@@ -25,6 +27,7 @@ class Rover(Agent):
         base_position: Tuple[float, float],
         move_step: float = 1.0,
         obstacle_radius: float = 5.0,
+        viz_server = None
     ) -> None:
         super().__init__(jid, password)
         self.position = position
@@ -53,6 +56,13 @@ class Rover(Agent):
             "silicon": 0.2,     # 20% chance
             "water_ice": 0.1,   # 10% chance
         }
+
+        if viz_server: 
+            self.setup_visualization(
+                viz_server,
+                agent_type="rover",
+                color="red"   # whatever color
+            )
 
     # -------------------------------------------------------------------------
     # UTILITIES
@@ -247,6 +257,15 @@ class Rover(Agent):
                 rover.path = []
                 print(f"{CYAN}[{rover.name}] REJECTED for mission at {eval(msg.body)['target']}{RESET}")
 
+            # --------------------------
+            # Inform on rover stats
+            # --------------------------
+            elif performative == "inform" and ontology == "return_path_to_base":
+                rover.path = eval(msg.body)
+                rover.goal = rover.path[-1] if rover.path else None
+                rover.status = "returning"
+                print(f"[{rover.name}] Received return path ({len(rover.path)} steps) to base.")
+
             await asyncio.sleep(1)
 
     class MoveAlongPath(CyclicBehaviour):
@@ -382,4 +401,8 @@ class Rover(Agent):
         print(f"{CYAN}Initializing [{self.name}] rover.{RESET}")
         self.add_behaviour(self.ReceiveMessages())
         self.add_behaviour(self.Charge())
+
+        if hasattr(self, "viz_server"):
+            self.add_behaviour(VisualizationBehaviour())
+
         print(f"{CYAN}[{self.name}] Rover initialized at {self.position}, waiting for path.{RESET}")

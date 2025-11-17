@@ -12,6 +12,7 @@ from world.map import Map
 from agents.base import Base
 from agents.drone import Drone
 from agents.rover import Rover
+from agents.visualizator import VisualizationServer
 
 def setup_logging(config: Dict[str, Any]):
     """Configure logging based on config file."""
@@ -172,6 +173,10 @@ async def main():
     # --- SETUP LOGGING ---
     setup_logging(config)
     
+    # --- CREATE VISUALIZATION SERVER ---
+    viz_server = VisualizationServer()
+    runner = await viz_server.start_server()
+
     # --- EXTRACT CONFIG VALUES ---
     sim_config = config.get("simulation", {})
     duration = sim_config.get("duration_seconds", 600)
