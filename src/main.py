@@ -177,6 +177,12 @@ async def main():
     viz_server = VisualizationServer()
     runner = await viz_server.start_server()
 
+    print("[MAIN] Waiting for visualization client to connect...")
+    connected = await viz_server.wait_for_client(timeout=30)  # 30 second timeout
+    
+    if not connected:
+        print("[WARNING] Starting simulation without visualization client")
+
     # --- EXTRACT CONFIG VALUES ---
     sim_config = config.get("simulation", {})
     duration = sim_config.get("duration_seconds", 600)
@@ -242,7 +248,8 @@ async def main():
             world,
             world_map,
             drone_pos,
-            known_bases=known_base_jids
+            known_bases=known_base_jids,
+            viz_server=viz_server
         )
         drones[drone_jid] = drone
         agents_to_start.append(drone)
@@ -271,7 +278,8 @@ async def main():
             world,
             world_map,
             base_jid=rover_base_jid,
-            base_position=bases[base_jid].position
+            base_position=bases[base_jid].position,
+            viz_server=viz_server
         )
         rovers[rover_jid] = rover
         agents_to_start.append(rover)

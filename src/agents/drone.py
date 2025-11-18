@@ -10,9 +10,11 @@ from spade.message import Message
 from world.world import World, WorldObject
 from world.map import Map
 
+from agents.visualizator import VisualizationBehaviour, VisualizationMixin
+
 from settings import *
 
-class Drone(Agent):
+class Drone(VisualizationMixin, Agent):
     def __init__(
         self,
         jid: str,
@@ -22,7 +24,8 @@ class Drone(Agent):
         position: Tuple[float, float],
         known_bases: List[str],
         height: float = 1.0,
-        scan_radius: float = 500.0
+        scan_radius: float = 500.0,
+        viz_server = None
     ) -> None:
         super().__init__(jid, password)
         self.world = world
@@ -44,6 +47,15 @@ class Drone(Agent):
         self.scanned_areas: List[Tuple[float, float]] = []
         self.areas_of_interest: List[Tuple[float, float]] = []
         self.current_scan_position = list(self.position)
+
+        self.viz_server = viz_server
+        if self.viz_server:
+            # self.setup_visualization(
+                # self.viz_server,
+                # agent_type="drone",
+                # color="green"
+            # )
+            pass
 
     # -------------------------------------------------------------------------
     # BEHAVIOURS
@@ -85,8 +97,8 @@ class Drone(Agent):
                         drone.add_behaviour(drone.RecheckBaseAvailability(scan_pos))
                         return
 
-                    drone.add_behaviour(drone.RequestAgentForMission(scan_pos))
                     self.kill()
+                    drone.add_behaviour(drone.RequestAgentForMission(scan_pos))
 
     # Start a FIPA contract-net protocol with all the bases 
     # Get the bids from the bases
@@ -196,7 +208,7 @@ class Drone(Agent):
             or the timeout has expired.
             """
             drone = self.agent
-            print(f"{GREEN}[{self.agent.name}] All responses received for mission at {self.target_position}.{RESET}")
+            print(f"{GREEN}[{drone.name}] All responses received for mission at {self.target_position}.{RESET}")
 
             if not drone.proposals:
                 print(f"{GREEN}[{drone.name}] No proposals received for mission at {self.target_position}. Retrying later.{RESET}")

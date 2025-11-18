@@ -56,14 +56,17 @@ class Rover(VisualizationMixin, Agent):
             "silicon": 0.2,     # 20% chance
             "water_ice": 0.1,   # 10% chance
         }
-        self.viz_server = viz_server
 
+        self.viz_server = viz_server
         if self.viz_server:
-                self.setup_visualization(
-                    self.viz_server,
-                    agent_type="rover",
-                    color="red"
-                )
+            self.setup_visualization(
+                self.viz_server,
+                agent_type="rover",
+                agent_jid=jid,
+                position=position,
+                battery=100.0,
+                color="red"
+            )
 
     # -------------------------------------------------------------------------
     # UTILITIES
@@ -182,6 +185,7 @@ class Rover(VisualizationMixin, Agent):
                 if rover.energy >= MAX_ROVER_CHARGE:
                     rover.energy = MAX_ROVER_CHARGE
 
+            await rover.viz_update_battery(100 * rover.energy / MAX_ROVER_CHARGE)
             await asyncio.sleep(1)
     
     class ReceiveMessages(CyclicBehaviour):
@@ -308,7 +312,7 @@ class Rover(VisualizationMixin, Agent):
             next_step = rover.path[rover.curr]
             dx, dy = rover.get_dpos(rover.position, next_step)
             new_pos = (rover.position[0] + dx * rover.move_step, rover.position[1] + dy * rover.move_step)
-            rover.energy -= rover.calculate_distance((0, 0), (dx, dy)) * rover.move_step * ENERGY_PER_DISTANCE_UNIT
+            rover.energy -= rover.calculate_distance((0, 0), (dx, dy)) * rover.move_step * ENERGY_PER_DISTANCE_UNIT 
             await asyncio.sleep(rover.move_step / ROVER_SPEED_UNIT_PER_SEC)
 
             collisions = rover.world.collides(rover.jid, new_pos)
@@ -326,6 +330,10 @@ class Rover(VisualizationMixin, Agent):
 
             else:
                 rover.position = new_pos
+
+                await rover.viz_update_position(rover.position)
+                await rover.viz_update_battery(100 * rover.energy / MAX_ROVER_CHARGE)
+
                 dist_to_next_step = rover.calculate_distance(rover.position, next_step)
                 if dist_to_next_step < 2 * rover.move_step:
                     rover.curr += 1 if rover.status == "moving" else -1
@@ -337,6 +345,8 @@ class Rover(VisualizationMixin, Agent):
                 if rover.status == "moving" and rover.curr == len(rover.path):
                     rover.status = "arrived"
                     print(f"{CYAN}[{rover.name}] Arrived at mission goal {rover.goal}{RESET}")
+                    await rover.viz_update_status(rover.status)
+
                     msg = Message(
                         to=rover.base_jid,
                         metadata={"performative": "inform", "type": "mission_complete"},
@@ -359,6 +369,7 @@ class Rover(VisualizationMixin, Agent):
                     rover.is_on_base = True
 
                     print(f"{CYAN}[{rover.name}] Returned to base successfully at {rover.position}{RESET}")
+                    await rover.viz_update_status(rover.status)
 
                     msg = Message(
                         to=rover.base_jid,

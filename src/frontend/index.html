@@ -534,7 +534,7 @@
             const exists = resources.find(r => r.id === resource.id);
             if (!exists) {
                 resources.push({ ...resource, discovered: true });
-                addMessage('Discovery', ${resource.type} found at (${Math.floor(resource.x)}, ${Math.floor(resource.y)}));
+                addMessage('Discovery', `${resource.type} found at (${Math.floor(resource.x)}, ${Math.floor(resource.y)})`);
             }
             render();
         }
@@ -543,13 +543,13 @@
             const exists = hazards.find(h => h.id === hazard.id);
             if (!exists) {
                 hazards.push(hazard);
-                addMessage('Alert', Hazard: ${hazard.type} at (${Math.floor(hazard.x)}, ${Math.floor(hazard.y)}));
+                addMessage('Alert', `Hazard: ${hazard.type} at (${Math.floor(hazard.x)}, ${Math.floor(hazard.y)})`);
             }
             render();
         }
 
         function markCellExplored(x, y) {
-            exploredCells.add(${x},${y});
+            exploredCells.add(`${x},${y}`);
             render();
         }
 
@@ -565,7 +565,7 @@
             const time = new Date().toLocaleTimeString();
             const msg = document.createElement('div');
             msg.className = 'message';
-            msg.innerHTML = <span class="message-time">[${time}]</span> <span class="message-sender">${sender}:</span> ${content};
+            msg.innerHTML = `<span class="message-time">[${time}]</span> <span class="message-sender">${sender}:</span> ${content}`;
             list.insertBefore(msg, list.firstChild);
             
             // Keep only last 50 messages
@@ -579,7 +579,7 @@
             list.innerHTML = '';
             
             if (agents.length === 0) {
-                list.innerHTML = '<div style="color: #9ca3af; text-align: center; padding: 1rem;">Waiting for agents...</div>';
+                list.innerHTML = `<div style="color: #9ca3af; text-align: center; padding: 1rem;">Waiting for agents...</div>`;
                 return;
             }
             
@@ -619,7 +619,7 @@
                     command: command,
                     agentId: selectedAgent.id
                 }));
-                addMessage('Command', Sent: ${command} to ${selectedAgent.id});
+                addMessage('Command', `Sent: ${command} to ${selectedAgent.id}`);
             } else {
                 addMessage('System', 'Not connected to SPADE - command ignored');
             }
