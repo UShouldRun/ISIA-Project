@@ -1,0 +1,84 @@
+{
+    "simulation": {
+      "duration_seconds": 600,
+      "tag": "localhost"
+    },
+    "world": {
+      "map_limit": [100, 100]
+    },
+    "bases": [
+      {
+        "jid": "base1",
+        "name": "base1",
+        "center": [50, 50],
+        "radius": 5,
+        "password": "base1"
+      },
+      {
+        "jid": "base2",
+        "name": "base2",
+        "center": [10, 10],
+        "radius": 5,
+        "password": "base2"
+      }
+    ],
+    "drones": [
+      {
+        "jid": "drone1",
+        "name": "drone1",
+        "position": [70, 70],
+        "known_bases": ["base1"],
+        "password": "drone1"
+      },
+      {
+        "jid": "drone2",
+        "name": "drone2",
+        "position": [15, 15],
+        "known_bases": ["base1"],
+        "password": "drone2"
+      }
+    ],
+    "rovers": [
+      {
+        "jid": "rover1",
+        "name": "rover1",
+        "position": "random_in_base",
+        "base": "base1",
+        "password": "rover1"
+      },
+      {
+        "jid": "rover2",
+        "name": "rover2",
+        "position": "random_in_base",
+        "base": "base1",
+        "password": "rover2"
+      },
+      {
+        "jid": "rover3",
+        "name": "rover3",
+        "position": "random_in_base",
+        "base": "base1",
+        "password": "rover3"
+      },
+      {
+        "jid": "rover4",
+        "name": "rover4",
+        "position": "random_in_base",
+        "base": "base2",
+        "password": "rover4"
+      },
+      {
+        "jid": "rover5",
+        "name": "rover5",
+        "position": "random_in_base",
+        "base": "base2",
+        "password": "rover5"
+      }
+    ],
+    "logging": {
+      "base_level": "INFO",
+      "spade_xmpp_level": "DEBUG",
+      "spade_agent_level": "DEBUG"
+    }
+  }
+  

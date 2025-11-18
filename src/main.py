@@ -14,6 +14,8 @@ from agents.drone import Drone
 from agents.rover import Rover
 from agents.visualizator import VisualizationServer
 
+from settings import *
+
 def setup_logging(config: Dict[str, Any]):
     """Configure logging based on config file."""
     log_config = config.get("logging", {})
@@ -118,51 +120,120 @@ def generate_world(config: Dict[str, Any], tag: str, viz_server) -> Tuple[World,
     
     return world, world_map, base_centers, rover_positions, drone_positions
 
-async def simulate_hazards(world_map: Map, interval: int = 10):
-    def clear_storm() -> bool:
+async def simulate_hazards(world_map: Map, viz_server: Any, interval: int = 5):
+    """
+    Simulates dust storms and updates the map accordingly, sending updates to viz.
+    """
+    async def clear_storm():
         """Resets the storm flag on all cells and returns True if any storm was cleared."""
-        was_cleared = False
+        logging.info("[HAZARD] clearing for new storm...")
+        logging.info("[HAZARD] clearing for new storm...")
+        logging.info("[HAZARD] clearing for new storm...")
+        logging.info("[HAZARD] clearing for new storm...")
+        logging.info("[HAZARD] clearing for new storm...")
+        logging.info("[HAZARD] clearing for new storm...")
+    
+
         for i in range(world_map.columns):
             for j in range(world_map.rows):
                 cell = world_map.get_cell(i, j)
                 if cell.dust_storm:
-                    cell.dust_storm = False
-                    was_cleared = True
-        return was_cleared
+                    world_map.clear_dust_cell(i, j)
+
+        flat_map  = [] 
+              # Only iterate over the first 100x100 cells for the fixed visualization view
+        max_viz_x = min(world_map.columns, 100)
+        max_viz_y = min(world_map.rows, 100)
+        
+        # Iterate over the grid (columns, then rows) and flatten it
+        for x in range(max_viz_x):
+            for y in range(max_viz_y):
+                # Use the cell from the simulation's map
+                cell = world_map.grid[x][y]
+                # Scale coordinates if necessary, but for a 100x100 view, we often use the base index
+                
+                # To scale down coordinates if the map is >100x100:
+                # If your map is 1000x1000, we'd need to sample and map x/y values differently.
+                # For simplicity, we assume the simulation map is 100x100 and use indices 0-99.
+                
+                # If your map is larger, you might average or pick the top-left cell for a 10:1 reduction.
+                
+                # For now, let's assume the Map is 100x100 and use its data directly.
+                cell_dict = cell.to_dict()
+                flat_map.append(cell_dict)
+                
+        await viz_server.send_map_updates(flat_map)
+            
+        return
 
     while True:
-        await asyncio.sleep(interval)
-        
-        if clear_storm():
-            print("[HAZARD] Previous storm subsided. Map cells reset.")
-        
-        # 3. Randomly introduce a new storm (e.g., 10% chance)
-        if random.random() < STORM_CHANCE: 
-            # Choose a center for the storm
+        try:
+            await asyncio.sleep(interval)
+        except asyncio.CancelledError:
+            logging.info("[HAZARD] FAILEEEEEEEEEEEED...")
+            logging.info("[HAZARD] FAILEEEEEEEEEEEED...")
+            logging.info("[HAZARD] FAILEEEEEEEEEEEED...")
+            logging.info("[HAZARD] FAILEEEEEEEEEEEED...")
+            logging.info("[HAZARD] FAILEEEEEEEEEEEED...")
 
+            # Handle cancellation during sleep for clean shutdown
+            await clear_storm() # Clear any active storms before exit
+            raise
+        
+        logging.info("[HAZARD] Checking for new storm...")
+
+        # await clear_storm()
+        logging.info("[HAZARD] Previous storm subsided. Map cells reset.")
+        
+        # Randomly introduce a new storm (e.g., 10% chance)
+        if random.random() < STORM_CHANCE: 
             center_x = random.randint(0, world_map.columns - 1)
             center_y = random.randint(0, world_map.rows - 1)
+            radius = random.randint(10, 30)
 
-            # Choose a radius (in map units)
-            radius = random.randint(50, 200)
+            logging.warning(f"[HAZARD] New dust storm forming at ({center_x}, {center_y}) with radius {radius}.")
 
-            print(f"[HAZARD] New dust storm forming at ({center_x}, {center_y}) with radius {radius}.")
-
-            # Update the affected MapCells
             for i in range(world_map.columns):
                 for j in range(world_map.rows):
                     cell = world_map.get_cell(i, j)
-                    
-                    # Calculate distance
+                    # Note: cell.x and cell.y are grid coordinates, not world coordinates.
                     dist = ((cell.x - center_x) ** 2 + (cell.y - center_y) ** 2) ** 0.5
                     
                     if dist < radius:
-                        cell.dust_storm = True
+                        print("I GOT MADE")
+                          
+                        world_map.make_dust_cell(i,j)
+                    scale_factor = world_map.columns / 100 
+
+            flat_map  = [] 
+                  # Only iterate over the first 100x100 cells for the fixed visualization view
+            max_viz_x = min(world_map.columns, 100)
+            max_viz_y = min(world_map.rows, 100)
             
-            print(f"[HAZARD] Map updated. Agents will calculate new paths.")
+            # Iterate over the grid (columns, then rows) and flatten it
+            for x in range(max_viz_x):
+                for y in range(max_viz_y):
+                    # Use the cell from the simulation's map
+                    cell = world_map.grid[x][y]
+
+                    # Scale coordinates if necessary, but for a 100x100 view, we often use the base index
+                    
+                    # To scale down coordinates if the map is >100x100:
+                    # If your map is 1000x1000, we'd need to sample and map x/y values differently.
+                    # For simplicity, we assume the simulation map is 100x100 and use indices 0-99.
+                    
+                    # If your map is larger, you might average or pick the top-left cell for a 10:1 reduction.
+                    
+                    # For now, let's assume the Map is 100x100 and use its data directly.
+                    cell_dict = cell.to_dict()
+                    flat_map.append(cell_dict)
+                    
+            await viz_server.send_map_updates(flat_map)
+                
+            logging.warning(f"[HAZARD] Map updated.")
         
         else:
-            print("[HAZARD] All clear. No new storm detected.")
+            logging.info("[HAZARD] All clear. No new storm detected.")
 
 async def main():
     # --- LOAD CONFIGURATION ---
@@ -306,6 +377,8 @@ async def main():
     print(f"\n[MAIN] All agents started. Running simulation for {duration} seconds...")
     print(f"[MAIN] Summary: {len(bases)} bases, {len(drones)} drones, {len(rovers)} rovers\n")
     
+    hazard_task = asyncio.create_task(simulate_hazards(world_map, viz_server, interval=5))
+
     # --- RUN SIMULATION ---
     await asyncio.sleep(duration)
     
@@ -313,6 +386,8 @@ async def main():
     for agent in started_agents:
         await agent.stop()
     
+    hazard_task.cancel()
+
     print("[MAIN] All agents stopped.")
 
 if __name__ == "__main__":

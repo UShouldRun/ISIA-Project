@@ -21,8 +21,6 @@ class MapCell():
         self.terrain = terrain 
         self.cost = 0 if terrain == 0 else float('inf')
 
-        self.has_dust_storm = False
-
         self.dust_storm = False
         self.x = pos[0]
         self.y = pos[1]
@@ -51,7 +49,7 @@ class MapCell():
                 "x": self.x,
                 "y": self.y,
                 "terrain": float(self.terrain), # <-- CAPTURING THE VALUE HERE
-                "dust_storm": self.has_dust_storm
+                "dust_storm": bool(self.dust_storm)
             }
 
 class Map():
@@ -128,6 +126,29 @@ class Map():
             for j in range(self.columns):
                 count += self.is_visited((i, j))
         return count
+
+    def get_cell(self, x: int, y: int) -> Optional[MapCell]:
+        """
+        Access a MapCell by its (x, y) coordinates.
+        """
+        if self.in_map((x, y)):
+            # Access grid[column][row] which corresponds to grid[x][y]
+            return self.grid[x][y]
+        return None
+
+    def make_dust_cell(self, x: int, y: int):
+
+        if self.in_map((x, y)):
+            self.grid[x][y].dust_storm = True
+
+        return
+    
+    def clear_dust_cell(self, x: int, y: int):
+
+        if self.in_map((x, y)):
+            self.grid[x][y].dust_storm = False
+
+        return
 
     def print(self, start: Optional[MapPos], goal: Optional[MapPos]) -> None:
         for i in range(self.rows):

@@ -2,8 +2,7 @@ import asyncio
 import json
 import aiohttp
 
-from typing import Tuple, List, Optional
-from collections import defaultdict
+from typing import Tuple, List, Optional, Dict, Any
 
 from aiohttp import web
 
@@ -145,6 +144,17 @@ class VisualizationServer:
                 "terrain": float(terrain),
                 "dust_storm": bool(dust_storm)
             }
+        })
+
+    async def send_map_updates(self, map_data):
+        """
+        Handles bulk updates of cell properties (like dust_storm status).
+        """
+        print("HERE")
+        self.map_data = map_data
+        await self.broadcast({
+            "type": "update_map",
+            "map_cells": map_data
         })
 
     async def send_agent_update(self, agent_id: str, agent_type: str, x: float, y: float, battery: float, status: str, color: Optional[str], radius: int):

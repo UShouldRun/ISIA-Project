@@ -535,6 +535,7 @@
 
                 ws.onmessage = (event) => {
                     const data = JSON.parse(event.data);
+                    // console.log(data);
                     handleMessage(data);
                 };
 
@@ -601,8 +602,14 @@
         }
         
         function handleMessage(data) {
+            console.log(data.type);
             switch (data.type) {
-                case 'full_map_init': 
+                case 'full_map_init':
+                    addMessage('System', `TRIGGERED1`);
+                    initializeFullMap(data.map_cells);
+                    break;
+                case 'update_map': 
+                    addMessage('System', `TRIGGERED`);
                     initializeFullMap(data.map_cells);
                     break;
                 case 'map_cell_update': 
@@ -817,6 +824,12 @@
                         } else if (cell.terrain === -1) {
                             terrainColor = 'rgba(30, 41, 59, 0.6)';
                         }
+
+                        if (cell.dust_storm === true) {
+                            console.log(cell.dust_storm)
+                            terrainColor = 'rgba(239, 181, 73, 0.7)';
+                        }
+
                         ctx.fillStyle = terrainColor;
                         ctx.fillRect(drawX, drawY, CELL_SIZE_PX, CELL_SIZE_PX);
 
