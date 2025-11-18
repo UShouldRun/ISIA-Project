@@ -60,16 +60,19 @@ def random_pos_in_base(world: World, base_name: str, base_centers: Dict[str, Tup
     print("[WARNING] Could not find collision-free position, using fallback")
     return (base_center[0], base_center[1])
 
-def generate_world(config: Dict[str, Any], tag: str) -> Tuple[World, Map, Dict[str, Tuple[float, float]], List[Tuple[float, float]]]:
+def generate_world(config: Dict[str, Any], tag: str, viz_server) -> Tuple[World, Map, Dict[str, Tuple[float, float]], List[Tuple[float, float]]]:
     """Generate the world based on configuration."""
     world_config = config.get("world", {})
     base_configs = config.get("bases", [])
     rover_configs = config.get("rovers", [])
     drone_configs = config.get("drones", [])
     
-    map_limit = tuple(world_config.get("map_limit", [1000, 1000]))
+    map_limit = tuple(world_config.get("map_limit", [100, 100]))
     
     world_map = Map(map_limit)
+
+    viz_server.initialize_map(world_map)
+
     world = World([])
     
     # Dictionary to store base centers by base name
@@ -193,7 +196,7 @@ async def main():
     rover_configs = config.get("rovers", [])
     
     # --- WORLD INITIALIZATION ---
-    world, world_map, base_centers, rover_positions, drone_positions = generate_world(config, tag)
+    world, world_map, base_centers, rover_positions, drone_positions = generate_world(config, tag, viz_server)
     
     # --- BUILD JID MAPS ---
     base_jids = {b["jid"]: f"{b['jid']}@{tag}" for b in base_configs}

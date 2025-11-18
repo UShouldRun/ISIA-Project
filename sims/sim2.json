@@ -4,13 +4,13 @@
     "tag": "localhost"
   },
   "world": {
-    "map_limit": [150, 150]
+    "map_limit": [100, 100]
   },
   "bases": [
     {
       "jid": "base1",
       "name": "base1",
-      "center": [110, 110],
+      "center": [50, 50],
       "radius": 5,
       "password": "base1"
     }
@@ -19,7 +19,7 @@
     {
       "jid": "drone1",
       "name": "drone1",
-      "position": [50, 50],
+      "position": [70, 70],
       "known_bases": ["base1", "base2"],
       "password": "drone1"
     }

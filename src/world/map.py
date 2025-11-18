@@ -21,6 +21,8 @@ class MapCell():
         self.terrain = terrain 
         self.cost = 0 if terrain == 0 else float('inf')
 
+        self.has_dust_storm = False
+
         self.dust_storm = False
         self.x = pos[0]
         self.y = pos[1]
@@ -42,6 +44,15 @@ class MapCell():
             total_cost += 3
             
         return total_cost
+
+    def to_dict(self):
+            """Converts MapCell state to a JSON-serializable dictionary for the client."""
+            return {
+                "x": self.x,
+                "y": self.y,
+                "terrain": float(self.terrain), # <-- CAPTURING THE VALUE HERE
+                "dust_storm": self.has_dust_storm
+            }
 
 class Map():
     def __init__(self, limit: Tuple[float, float]) -> None:

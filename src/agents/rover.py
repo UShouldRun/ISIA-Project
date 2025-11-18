@@ -64,7 +64,7 @@ class Rover(VisualizationMixin, Agent):
                 agent_type="rover",
                 agent_jid=jid,
                 position=position,
-                battery=100.0,
+                battery=self.energy,
                 color="red"
             )
 

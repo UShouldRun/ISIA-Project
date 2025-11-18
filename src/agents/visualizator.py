@@ -9,6 +9,8 @@ from aiohttp import web
 from spade.agent import Agent
 from spade.behaviour import CyclicBehaviour
 
+from world.map import Map
+
 # WebSocket Server for Visualization
 class VisualizationServer:
     def __init__(self):
@@ -28,6 +30,8 @@ class VisualizationServer:
         
         print(f"Client connected. Total clients: {len(self.clients)}")
         
+        await self.send_full_map(ws)
+
         try:
             async for msg in ws:
                 if msg.type == aiohttp.WSMsgType.TEXT:
@@ -80,6 +84,67 @@ class VisualizationServer:
     # -------------------------------------------------------------
     # HIGH-LEVEL MESSAGE HELPERS (CALLED BY MIXIN)
     # -------------------------------------------------------------
+    def initialize_map(self, planet_map: Map):
+        """
+        Receives the actual Map object from the main world generation and
+        prepares the flat list format for the visualization client.
+        """
+        flat_map = []
+        
+        # Scaling factor: assuming your map is 1000x1000 and visualization is 100x100
+        # If the map size is the same (100x100), factor is 1.
+        scale_factor = planet_map.columns / 100 
+
+        # Only iterate over the first 100x100 cells for the fixed visualization view
+        max_viz_x = min(planet_map.columns, 100)
+        max_viz_y = min(planet_map.rows, 100)
+        
+        # Iterate over the grid (columns, then rows) and flatten it
+        for x in range(max_viz_x):
+            for y in range(max_viz_y):
+                # Use the cell from the simulation's map
+                cell = planet_map.grid[x][y]
+                # Scale coordinates if necessary, but for a 100x100 view, we often use the base index
+                
+                # To scale down coordinates if the map is >100x100:
+                # If your map is 1000x1000, we'd need to sample and map x/y values differently.
+                # For simplicity, we assume the simulation map is 100x100 and use indices 0-99.
+                
+                # If your map is larger, you might average or pick the top-left cell for a 10:1 reduction.
+                
+                # For now, let's assume the Map is 100x100 and use its data directly.
+                cell_dict = cell.to_dict()
+                
+                # Override the coordinates to be 0-99 for the client visualization
+                cell_dict['x'] = x
+                cell_dict['y'] = y
+                
+                flat_map.append(cell_dict)
+                
+        self.map_data = flat_map
+        self.map_initialized = True
+        print(f"Server map data initialized from simulation world: {len(flat_map)} cells.")
+
+    async def send_full_map(self, ws):
+        """Send the entire pre-generated map data to a specific client"""
+        # The map data is a list of dictionaries, one for each cell
+        message = {
+            "type": "full_map_init",
+            "map_cells": self.map_data
+        }
+        await ws.send_json(message)
+
+    async def send_map_cell_data(self, x, y, terrain, dust_storm=False):
+        await self.broadcast({
+            "type": "map_cell_update",
+            "cell": {
+                "x": int(x),
+                "y": int(y),
+                "terrain": float(terrain),
+                "dust_storm": bool(dust_storm)
+            }
+        })
+
     async def send_agent_update(self, agent_id: str, agent_type: str, x: float, y: float, battery: float, status: str, color: Optional[str]):
         await self.broadcast({
             "type": "agent_update",

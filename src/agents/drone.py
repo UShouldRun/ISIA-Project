@@ -50,13 +50,14 @@ class Drone(VisualizationMixin, Agent):
 
         self.viz_server = viz_server
         if self.viz_server:
-            # self.setup_visualization(
-                # self.viz_server,
-                # agent_type="drone",
-                # color="green"
-            # )
-            pass
-
+            self.setup_visualization(
+                self.viz_server,
+                agent_type="drone",
+                agent_jid=jid,
+                position=position,
+                battery=100.0,
+                color="blue"
+            )
     # -------------------------------------------------------------------------
     # BEHAVIOURS
     # -------------------------------------------------------------------------
@@ -297,4 +298,8 @@ class Drone(VisualizationMixin, Agent):
         await asyncio.sleep(2)
         self.add_behaviour(self.ScanTerrain())
         self.add_behaviour(self.ReceiveMessages())
+
+        if hasattr(self, "viz_server"):
+            self.add_behaviour(VisualizationBehaviour())
+
         print(f"{GREEN}[{self.name}] Drone online at height {self.height} km{RESET}")
