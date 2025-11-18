@@ -91,7 +91,7 @@ class Drone(VisualizationMixin, Agent):
                 if not drone.bases:
                     print(f"{GREEN}[{drone.name}] No bases available. Trying later...{RESET}")
                     self.kill()
-                    drone.add_behaviour(drone.RecheckBaseAvailability(scan_pos))
+                    drone.add_behaviour(drone.RecheckBaseAvailability())
                     return
 
                 self.kill()
@@ -124,7 +124,7 @@ class Drone(VisualizationMixin, Agent):
                 await self.send(msg)
                 print(f"{GREEN}[{drone.name}] CFP sent to {base_jid} for mission at {self.target_position}{RESET}")
 
-            timeout = 4  # seconds to wait for bids
+            timeout = 8  # seconds to wait for bids
 
             start_time = asyncio.get_event_loop().time()
 
