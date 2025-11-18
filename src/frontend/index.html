@@ -282,11 +282,19 @@
             overflow-y: auto;
             font-family: 'Courier New', monospace;
             font-size: 0.75rem;
+            display: flex;
+            flex-direction: column-reverse;
+        }
+
+        .messages-container {
+            display: flex;
+            flex-direction: column;
         }
 
         .message {
             color: #d1d5db;
             margin-bottom: 0.25rem;
+            padding: 0.25rem 0;
         }
 
         .message-time {
@@ -295,12 +303,14 @@
 
         .message-sender {
             color: #60a5fa;
+            font-weight: 600;
         }
 
         .connection-status {
             position: fixed;
             top: 1rem;
-            right: 1rem;
+            left: 50%;
+            transform: translateX(-50%);
             padding: 0.5rem 1rem;
             border-radius: 0.375rem;
             font-size: 0.875rem;
@@ -456,7 +466,9 @@
                 <!-- Messages -->
                 <div class="panel">
                     <div class="panel-title">Communication Log</div>
-                    <div id="messagesList" class="messages-list"></div>
+                    <div id="messagesList" class="messages-list">
+                        <div id="messagesContainer" class="messages-container"></div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -608,8 +620,8 @@
                 case 'cell_explored': 
                     markCellExplored(data.x, data.y);
                     break;
-                case 'message':
-                    addMessage(data.from, data.content);
+                case 'log_message':
+                    addMessage(data.sender, data.content);
                     break;
                 case 'stats':
                     updateStats(data.stats);
@@ -666,17 +678,18 @@
         }
 
         function addMessage(sender, content) {
-            const list = document.getElementById('messagesList');
+            const container = document.getElementById('messagesContainer');
             const time = new Date().toLocaleTimeString();
             const msg = document.createElement('div');
             msg.className = 'message';
             msg.innerHTML = `<span class="message-time">[${time}]</span> <span class="message-sender">${sender}:</span> ${content}`;
-            list.insertBefore(msg, list.firstChild);
             
-            // Keep only last 50 messages
-            while (list.children.length > 50) {
-                list.removeChild(list.lastChild);
-            }
+            // Append to the end (newest at bottom)
+            container.appendChild(msg);
+            
+            // Auto-scroll to bottom to show newest message
+            const messagesList = document.getElementById('messagesList');
+            messagesList.scrollTop = messagesList.scrollHeight;
         }
 
         function renderAgents() {
@@ -768,6 +781,11 @@
             viewportX = 0; // Reset viewport to origin
             viewportY = 0;
             mapMinX = mapMinY = mapMaxX = mapMaxY = 0; // Reset bounds
+            
+            // Clear messages
+            const container = document.getElementById('messagesContainer');
+            container.innerHTML = '';
+            
             renderAgents();
             render();
             addMessage('System', 'Visualization reset');

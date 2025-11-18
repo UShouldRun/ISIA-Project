@@ -3,6 +3,7 @@ import json
 import aiohttp
 
 from typing import Tuple, List, Optional
+from collections import defaultdict
 
 from aiohttp import web
 
@@ -21,7 +22,7 @@ class VisualizationServer:
         self.app.router.add_get('/ws', self.websocket_handler)
         self.client_connected = asyncio.Event()  # Event to signal connection
         self.map_data = []
-        
+
     async def websocket_handler(self, request):
         ws = web.WebSocketResponse()
         await ws.prepare(request)

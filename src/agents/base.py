@@ -124,6 +124,7 @@ class Base(VisualizationMixin, Agent):
                 rover_jid = bid_data.get("rover")
                 
                 print(f"{MAGENTA}[{base.name}] Received PROPOSAL from {message.sender}: Cost={cost}, Rover={rover_jid}{RESET}")
+                await base.viz_send_message(f"Received proposal from {str(message.sender).split('@')[0]}: Cost={cost}")
                 
                 # Store the valid bid
                 if rover_jid is not None:
@@ -145,6 +146,7 @@ class Base(VisualizationMixin, Agent):
 
             if not base.proposals:
                 print(f"{MAGENTA}[{base.name}] No proposals received for mission at {self.target_position}{RESET}")
+                await base.viz_send_message(f"No proposals received for mission at {self.target_position}")
                 return
 
             """
@@ -161,6 +163,7 @@ class Base(VisualizationMixin, Agent):
             accept_msg.set_metadata("type", "rover_bid_cfp")
             accept_msg.body = str({"target": self.target_position, "base": str(base.jid), "rover": str(best_sender), "cost": best_bid['cost']})
             print(f"{MAGENTA}[{base.name}] Sending winner bid to drone 'target': {self.target_position}, 'base': {base.jid}, 'rover': {best_sender}, 'cost': {best_bid['cost']}{RESET}")
+            await base.viz_send_message(f"Selected {str(best_sender).split('@')[0]} for mission at {self.target_position} (cost: {best_bid['cost']:.1f})")
             await self.send(accept_msg)
 
             # Reject all other proposals
@@ -195,11 +198,13 @@ class Base(VisualizationMixin, Agent):
                         drone_msg.set_metadata("type", "drone_bid_cfp")
                         drone_msg.body = str({"reason": "no_rovers_available"})
                         print(f"{MAGENTA}[{base.name}] Sending reject bid to drone, no rovers available{RESET}")
+                        await base.viz_send_message(f"Rejected mission request from {sender}: No rovers available")
                         await self.send(drone_msg)
 
                     else:
                         target_pos = eval(msg.body)
                         print(f"{MAGENTA}[{base.name}] Received mission CFP from {sender} for target {target_pos}{RESET}")
+                        await base.viz_send_message(f"Received mission request from {sender} for target {target_pos}")
                         base.add_behaviour(base.RequestRoverForBid(target_pos, msg.sender))
 
                 # --- BID ACCEPTED FROM DRONE ---
@@ -209,6 +214,7 @@ class Base(VisualizationMixin, Agent):
                     winning_rover = target_data.get("rover")
 
                     print(f"{MAGENTA}[{base.name}] Bid accepted from {sender} for target {target_pos}{RESET}")
+                    await base.viz_send_message(f"Mission confirmed: Sending {str(winning_rover).split('@')[0]} to {target_pos}")
                     # Send accept to rover
                     accept_msg = Message(to=winning_rover)
                     accept_msg.set_metadata("performative", "accept_proposal")
@@ -231,6 +237,7 @@ class Base(VisualizationMixin, Agent):
                 if performative == "inform" and msg_type == "rover_leaving_base":
                     rover = msg.sender
                     print(f"{MAGENTA}[{base.name}] Rover {str(rover).split("@")[0]} leaving base{RESET}")
+                    await base.viz_send_message(f"Rover {str(rover).split('@')[0]} departing from base")
                     base.rovers.remove(rover)
                     
                 if performative == "inform" and msg_type == "mission_complete":
@@ -238,6 +245,7 @@ class Base(VisualizationMixin, Agent):
                     target_data = eval(msg.body)
                     position = target_data.get("position")
                     print(f"{MAGENTA}[{base.name}] Rover {str(rover).split("@")[0]} arrived at goal: current position {position}{RESET}")
+                    await base.viz_send_message(f"Rover {str(rover).split('@')[0]} reached target at {position}")
                     await base.viz_mark_explored(position[0], position[1])
 
                 if performative == "inform" and msg_type == "resources_found":
@@ -246,6 +254,7 @@ class Base(VisualizationMixin, Agent):
                     position = target_data.get("position")
                     resources = target_data.get("resources")
                     print(f"{MAGENTA}[{base.name}] Rover {str(rover).split("@")[0]} found resources at goal: current position {position}, resources: {resources}{RESET}")
+                    await base.viz_send_message(f"Rover {str(rover).split('@')[0]} discovered {len(resources)} resources at {position}")
 
                     for resource in resources:
                         base.resources[resource]["count"] += 1
@@ -255,6 +264,7 @@ class Base(VisualizationMixin, Agent):
                 if performative == "inform" and msg_type == "rover_returned_to_base":
                     rover = msg.sender
                     print(f"{MAGENTA}[{base.name}] Rover {str(rover).split("@")[0]} returned to base{RESET}")
+                    await base.viz_send_message(f"Rover {str(rover).split('@')[0]} returned to base")
                     base.rovers.append(rover)
 
                     for drone in base.drones:
@@ -285,6 +295,7 @@ class Base(VisualizationMixin, Agent):
     # -------------------------------------------------------------------------
     async def setup(self):
         print(f"{MAGENTA}[{self.name}] Base operational at position {self.position}{RESET}")
+        await self.viz_send_message(f"Base operational at position {self.position}")
         await self.viz_update_status("running")
         self.add_behaviour(self.ReceiveMessages())
 
@@ -295,7 +306,7 @@ class Base(VisualizationMixin, Agent):
         """Called when agent is being stopped"""
         print(f"{MAGENTA}[{self.name}] Base shutting down...{RESET}")
         print(f"{MAGENTA}Collected...{RESET}")
-        for resource, value in self.resources:
+        for resource, value in self.resources.items():
             print(f"{MAGENTA}  Found {resource}:{RESET}")
             print(f"{MAGENTA}    count = {value["count"]}{RESET}")
             print(f"{MAGENTA}    positions = {value["positions"]}{RESET}")

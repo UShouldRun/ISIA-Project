@@ -62,6 +62,7 @@ class Drone(VisualizationMixin, Agent):
     class ScanTerrain(CyclicBehaviour):
         async def on_start(self):
             print(f"{GREEN}[{self.agent.name}] Starting terrain scanning...{RESET}")
+            await self.agent.viz_send_message("Starting terrain scanning")
 
         # Simulate detection of area of interest (5% chance)
         def is_area_of_interest(self) -> bool:
@@ -87,9 +88,11 @@ class Drone(VisualizationMixin, Agent):
             if self.is_area_of_interest():
                 drone.areas_of_interest.append(scan_pos)
                 print(f"{GREEN}[{drone.name}] Area of interest detected at {scan_pos}{RESET}")
+                await drone.viz_send_message(f"Area of interest detected at {scan_pos}")
                 
                 if not drone.bases:
                     print(f"{GREEN}[{drone.name}] No bases available. Trying later...{RESET}")
+                    await drone.viz_send_message("No bases available - will retry later")
                     self.kill()
                     drone.add_behaviour(drone.RecheckBaseAvailability())
                     return
@@ -123,6 +126,8 @@ class Drone(VisualizationMixin, Agent):
                 msg.body = str(self.target_position)
                 await self.send(msg)
                 print(f"{GREEN}[{drone.name}] CFP sent to {base_jid} for mission at {self.target_position}{RESET}")
+            
+            await drone.viz_send_message(f"Requesting mission bids for target {self.target_position}")
 
             timeout = 8  # seconds to wait for bids
 
@@ -187,6 +192,7 @@ class Drone(VisualizationMixin, Agent):
                 rover_jid = bid_data.get("rover")
                 
                 print(f"{GREEN}[{self.agent.name}] Received PROPOSAL from base: {base_jid}: Cost={cost}, Rover={rover_jid}{RESET}")
+                await self.agent.viz_send_message(f"Received bid from {str(base_jid).split('@')[0]} (cost: {cost:.1f}s)")
                                 
                 # Store the valid bid
                 if base_jid is not None and rover_jid is not None:
@@ -209,6 +215,7 @@ class Drone(VisualizationMixin, Agent):
 
             if not drone.proposals:
                 print(f"{GREEN}[{drone.name}] No proposals received for mission at {self.target_position}. Retrying later.{RESET}")
+                await drone.viz_send_message(f"No bids received for {self.target_position} - will retry")
                 # Clear proposals for the next negotiation
                 drone.proposals = {} 
                 return
@@ -219,6 +226,7 @@ class Drone(VisualizationMixin, Agent):
             if best_base:
                 # ACCEPT the best proposal
                 print(f"{GREEN}[{drone.name}] Accepting proposal from {best_base} with cost {min_cost}{RESET}")
+                await drone.viz_send_message(f"Accepted bid from {str(best_base).split('@')[0]} for mission to {self.target_position}")
 
                 # Send the winner bid to the satelite and wait for further communication
                 accept_msg = Message(to=best_base)
@@ -240,6 +248,7 @@ class Drone(VisualizationMixin, Agent):
                         await self.send(reject_msg)
             else:
                 print(f"{GREEN}[{drone.name}] No suitable proposals received for mission at {self.target_position}. Retrying later.{RESET}")
+                await drone.viz_send_message(f"No suitable bids for {self.target_position} - will retry")
 
             # Clear proposals for the next negotiation
             drone.proposals = {}
@@ -274,6 +283,7 @@ class Drone(VisualizationMixin, Agent):
                     msg_info = eval(msg.body)["inform"]
                     if msg_info == "has_rovers_available":
                         print(f"{GREEN}[{drone.name}] Base {sender} informed it has rovers available{RESET}")
+                        await drone.viz_send_message(f"Base {sender} now has rovers available")
                         drone.non_available_bases.remove(msg.sender)
                         drone.bases.append(msg.sender)
 
@@ -283,6 +293,7 @@ class Drone(VisualizationMixin, Agent):
             await asyncio.sleep(30)
 
             print(f"{GREEN}[{drone.name}] preparing to check base availability{RESET}")
+            await drone.viz_send_message("Rechecking base availability")
             drone.bases.extend(drone.non_available_bases)
             drone.non_available_bases = []
 
@@ -300,3 +311,4 @@ class Drone(VisualizationMixin, Agent):
             self.add_behaviour(VisualizationBehaviour())
 
         print(f"{GREEN}[{self.name}] Drone online at height {self.height} km{RESET}")
+        await self.viz_send_message(f"Drone online at height {self.height} km")

@@ -207,6 +207,7 @@ class Rover(VisualizationMixin, Agent):
             if performative == "cfp" and msg_type == "rover_bid_cfp":
                 target_pos = eval(msg.body)
                 print(f"{CYAN}[{rover.name}] Received Bid request from Base for {target_pos}{RESET}")
+                await rover.viz_send_message(f"Received mission bid request for {target_pos}")
 
                 # Check if rover is free
                 if rover.is_locked_by_bid or rover.status != "idle":
@@ -218,6 +219,7 @@ class Rover(VisualizationMixin, Agent):
                     )
                     await self.send(reply)
                     print(f"{CYAN}[{rover.name}] REFUSING mission at {target_pos} (busy/locked){RESET}")
+                    await rover.viz_send_message(f"Refused mission at {target_pos} (busy/locked)")
 
                 else:
                     # Rover is available → propose
@@ -234,6 +236,7 @@ class Rover(VisualizationMixin, Agent):
                         )
                         await self.send(reply)
                         print(f"{CYAN}[{rover.name}] REFUSING mission at {target_pos} ({mission_status}){RESET}")
+                        await rover.viz_send_message(f"Refused mission at {target_pos} ({mission_status})")
                         return
 
                     estimated_mission_time = rover.compute_mission_time(target_pos)
@@ -245,6 +248,7 @@ class Rover(VisualizationMixin, Agent):
                     )
                     await self.send(reply)
                     print(f"{CYAN}[{rover.name}] PROPOSING mission at {target_pos} with cost {estimated_mission_time:.2f}{RESET}")
+                    await rover.viz_send_message(f"Submitted bid for {target_pos} (cost: {estimated_mission_time:.1f}s)")
 
             # Go to target
             elif performative == "accept_proposal" and msg_type == "rover_bid_cfp":
@@ -254,6 +258,7 @@ class Rover(VisualizationMixin, Agent):
                 rover.is_on_base = False # Out of base
 
                 print(f"{CYAN}[{rover.name}] ACCEPTED mission to {rover.goal}{RESET}")
+                await rover.viz_send_message(f"Mission accepted! Moving to {rover.goal}")
                 rover.add_behaviour(rover.MoveAlongPath())
 
             # Reject proposal → unlock and stay idle
@@ -263,6 +268,7 @@ class Rover(VisualizationMixin, Agent):
                 rover.goal = None
                 rover.path = []
                 print(f"{CYAN}[{rover.name}] REJECTED for mission at {eval(msg.body)['target']}{RESET}")
+                await rover.viz_send_message(f"Bid rejected for mission at {eval(msg.body)['target']}")
 
             # --------------------------
             # Inform on rover stats
@@ -320,6 +326,7 @@ class Rover(VisualizationMixin, Agent):
             s_collisions = len(collisions)
             if s_collisions > 0 and not (s_collisions == 1 and collisions[0].id == rover.base_jid):
                 print(f"{CYAN}[{rover.name}] Collision detected near {new_pos}, collisions: {collisions}{RESET}")
+                await rover.viz_send_message(f"Collision detected! Attempting to avoid obstacle")
 
                 alt = await rover.try_go_around(next_step)
                 if alt:
@@ -327,6 +334,7 @@ class Rover(VisualizationMixin, Agent):
                     print(f"{CYAN}[{rover.name}] Avoided obstacle locally.{RESET}")
                 else:
                     print(f"{CYAN}[{rover.name}] Could not avoid locally, CRASH.{RESET}")
+                    await rover.viz_send_message(f"CRASH: Unable to avoid obstacle")
                     return
 
             else:
@@ -346,6 +354,7 @@ class Rover(VisualizationMixin, Agent):
                 if rover.status == "moving" and rover.curr == len(rover.path):
                     rover.status = "arrived"
                     print(f"{CYAN}[{rover.name}] Arrived at mission goal {rover.goal}{RESET}")
+                    await rover.viz_send_message(f"Arrived at target location {rover.goal}")
                     await rover.viz_update_status(rover.status)
 
                     msg = Message(
@@ -370,6 +379,7 @@ class Rover(VisualizationMixin, Agent):
                     rover.is_on_base = True
 
                     print(f"{CYAN}[{rover.name}] Returned to base successfully at {rover.position}{RESET}")
+                    await rover.viz_send_message(f"Successfully returned to base")
                     await rover.viz_update_status(rover.status)
 
                     msg = Message(
@@ -403,8 +413,10 @@ class Rover(VisualizationMixin, Agent):
                 )
                 await self.send(msg)
                 print(f"{CYAN}[{rover.name}] Resources found at {rover.position}: {found_resources}{RESET}")
+                await rover.viz_send_message(f"Resources discovered: {', '.join(found_resources)}")
             else:
                 print(f"{CYAN}[{rover.name}] No resources found at {rover.position}.{RESET}")
+                await rover.viz_send_message(f"Soil analysis complete - no resources found")
 
             self.kill()  # one-time analysis
             await asyncio.sleep(1)
@@ -421,3 +433,4 @@ class Rover(VisualizationMixin, Agent):
             self.add_behaviour(VisualizationBehaviour())
 
         print(f"{CYAN}[{self.name}] Rover initialized at {self.position}, waiting for path.{RESET}")
+        await self.viz_send_message(f"Rover initialized at {self.position}")
