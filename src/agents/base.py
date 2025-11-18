@@ -11,19 +11,24 @@ from spade.behaviour import CyclicBehaviour, OneShotBehaviour
 from spade.message import Message
 from spade.template import Template
 
+from agents.visualizator import VisualizationBehaviour, VisualizationMixin
+
 from settings import *
 
-class Base(Agent):
+class Base(VisualizationMixin, Agent):
     def __init__(
         self,
         jid: str,
         password: str,
         position: Tuple[float, float] = [0, 0],
         rover_jids: List[str] = [],
-        drone_jids: List[str] = []
+        drone_jids: List[str] = [],
+        radius: int = 5,
+        viz_server = None
     ) -> None:
         super().__init__(jid, password)
         self.position = tuple(position)
+        self.radius = radius
 
         # This list is from rovers and drones that are currently on the base.
         # When the agent levaes the base, we lose information ab out it and remove it from the list
@@ -34,6 +39,18 @@ class Base(Agent):
         self.resources = defaultdict(lambda: { "count": 0, "positions": [] }) # Dict of detected resources
         self.pending_missions = [] # Queue of locations to explore
         self.proposals = {}
+
+        self.viz_server = viz_server
+        if self.viz_server:
+            self.setup_visualization(
+                self.viz_server,
+                agent_type="base",
+                agent_jid=jid,
+                position=position,
+                battery=100.0,
+                color="#ff00ff",
+                radius=radius
+            )
 
     # -------------------------------------------------------------------------
     # BEHAVIOURS
@@ -221,6 +238,7 @@ class Base(Agent):
                     target_data = eval(msg.body)
                     position = target_data.get("position")
                     print(f"{MAGENTA}[{base.name}] Rover {str(rover).split("@")[0]} arrived at goal: current position {position}{RESET}")
+                    await base.viz_mark_explored(position[0], position[1])
 
                 if performative == "inform" and msg_type == "resources_found":
                     rover = msg.sender
@@ -232,6 +250,7 @@ class Base(Agent):
                     for resource in resources:
                         base.resources[resource]["count"] += 1
                         base.resources[resource]["positions"].append(position)
+                        await base.viz_report_resource(resource, position[0], position[1])
 
                 if performative == "inform" and msg_type == "rover_returned_to_base":
                     rover = msg.sender
@@ -266,7 +285,11 @@ class Base(Agent):
     # -------------------------------------------------------------------------
     async def setup(self):
         print(f"{MAGENTA}[{self.name}] Base operational at position {self.position}{RESET}")
+        await self.viz_update_status("running")
         self.add_behaviour(self.ReceiveMessages())
+
+        if hasattr(self, "viz_server"):
+            self.add_behaviour(VisualizationBehaviour())
 
     async def stop(self):
         """Called when agent is being stopped"""

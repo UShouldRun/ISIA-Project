@@ -20,6 +20,7 @@ class VisualizationServer:
         # WebSocket route
         self.app.router.add_get('/ws', self.websocket_handler)
         self.client_connected = asyncio.Event()  # Event to signal connection
+        self.map_data = []
         
     async def websocket_handler(self, request):
         ws = web.WebSocketResponse()
@@ -145,7 +146,7 @@ class VisualizationServer:
             }
         })
 
-    async def send_agent_update(self, agent_id: str, agent_type: str, x: float, y: float, battery: float, status: str, color: Optional[str]):
+    async def send_agent_update(self, agent_id: str, agent_type: str, x: float, y: float, battery: float, status: str, color: Optional[str], radius: int):
         await self.broadcast({
             "type": "agent_update",
             "agent": {
@@ -155,7 +156,8 @@ class VisualizationServer:
                 "y": y,
                 "battery": battery,
                 "status": status,
-                "color": color
+                "color": color,
+                "radius": radius
             }
         })
 
@@ -164,7 +166,6 @@ class VisualizationServer:
             "type": "resource_discovered",
             "resource": {
                 "id": resource_id,
-                "type": resource_type,
                 "x": x,
                 "y": y
             }
@@ -213,7 +214,8 @@ class VisualizationMixin:
         agent_jid: str,
         position: Tuple[float, float],
         battery: float = 100.0,
-        color: Optional[str] = None
+        color: Optional[str] = None,
+        radius: int = 5
     ):
         """
         Setup visualization for this agent
@@ -228,6 +230,7 @@ class VisualizationMixin:
         self.agent_jid = agent_jid
         self.viz_agent_type = agent_type
         self.viz_color = color
+        self.viz_radius = radius
 
         self.viz_position = position
         self.viz_battery = battery
@@ -255,7 +258,8 @@ class VisualizationMixin:
                 y=self.viz_position[1],
                 battery=self.viz_battery,
                 status=self.viz_status,
-                color=self.viz_color
+                color=self.viz_color,
+                radius=self.viz_radius
             )
     
     async def viz_report_resource(self, resource_id: str, x: float, y: float):

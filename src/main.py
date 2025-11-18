@@ -52,9 +52,9 @@ def random_pos_in_base(world: World, base_name: str, base_centers: Dict[str, Tup
     
     max_attempts = 100
     for _ in range(max_attempts):
-        x = random.uniform(base_center[0] - base_radius, base_center[0] + base_radius)
-        y = random.uniform(base_center[1] - base_radius, base_center[1] + base_radius)
-        if all(((x - o.pos[0]) ** 2 + (y - o.pos[1]) ** 2) ** 0.5 > 2 for o in world.objects):
+        x = random.uniform(base_center[0] - 0.5 * base_radius, base_center[0] + 0.5 * base_radius)
+        y = random.uniform(base_center[1] - 0.5 * base_radius, base_center[1] + 0.5 * base_radius)
+        if all(((x - o.pos[0]) ** 2 + (y - o.pos[1]) ** 2) ** 0.5 > 1 for o in world.objects):
             return (x, y)
     # Fallback if collision-free position not found
     print("[WARNING] Could not find collision-free position, using fallback")
@@ -229,7 +229,9 @@ async def main():
             base_name,
             base_center,
             rovers_for_this_base,
-            drones_for_this_base
+            drones_for_this_base,
+            radius = base_config.get("radius", 50),
+            viz_server=viz_server
         )
         bases[base_jid] = base
         agents_to_start.append(base)
@@ -282,6 +284,7 @@ async def main():
             world_map,
             base_jid=rover_base_jid,
             base_position=bases[base_jid].position,
+            base_radius=bases[base_jid].radius,
             viz_server=viz_server
         )
         rovers[rover_jid] = rover

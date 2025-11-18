@@ -38,13 +38,11 @@ class Drone(VisualizationMixin, Agent):
         self.bases = known_bases
         self.non_available_bases = []
 
-        self.scanned_areas = []  # Areas already scanned
         self.areas_of_interest = []  # Detected areas that need exploration
         self.current_scan_position = [0, 0]
         # Dictionary to hold proposals during Contract Net negotiation
         self.proposals: Dict[str, Dict] = {}
 
-        self.scanned_areas: List[Tuple[float, float]] = []
         self.areas_of_interest: List[Tuple[float, float]] = []
         self.current_scan_position = list(self.position)
 
@@ -56,7 +54,7 @@ class Drone(VisualizationMixin, Agent):
                 agent_jid=jid,
                 position=position,
                 battery=100.0,
-                color="blue"
+                color="#00F000"
             )
     # -------------------------------------------------------------------------
     # BEHAVIOURS
@@ -84,22 +82,20 @@ class Drone(VisualizationMixin, Agent):
 
             scan_pos = tuple(drone.current_scan_position)
 
-            if scan_pos not in drone.scanned_areas:
-                drone.scanned_areas.append(scan_pos)
-                print(f"{GREEN}[{drone.name}] Scanning area: {scan_pos}{RESET}")
+            print(f"{GREEN}[{drone.name}] Scanning area: {scan_pos}{RESET}")
+            
+            if self.is_area_of_interest():
+                drone.areas_of_interest.append(scan_pos)
+                print(f"{GREEN}[{drone.name}] Area of interest detected at {scan_pos}{RESET}")
                 
-                if self.is_area_of_interest():
-                    drone.areas_of_interest.append(scan_pos)
-                    print(f"{GREEN}[{drone.name}] Area of interest detected at {scan_pos}{RESET}")
-                    
-                    if not drone.bases:
-                        print(f"{GREEN}[{drone.name}] No bases available. Trying later...{RESET}")
-                        self.kill()
-                        drone.add_behaviour(drone.RecheckBaseAvailability(scan_pos))
-                        return
-
+                if not drone.bases:
+                    print(f"{GREEN}[{drone.name}] No bases available. Trying later...{RESET}")
                     self.kill()
-                    drone.add_behaviour(drone.RequestAgentForMission(scan_pos))
+                    drone.add_behaviour(drone.RecheckBaseAvailability(scan_pos))
+                    return
+
+                self.kill()
+                drone.add_behaviour(drone.RequestAgentForMission(scan_pos))
 
     # Start a FIPA contract-net protocol with all the bases 
     # Get the bids from the bases
@@ -296,6 +292,7 @@ class Drone(VisualizationMixin, Agent):
     async def setup(self):
         print(f"{GREEN}Initializing [{self.name}] drone.{RESET}")
         await asyncio.sleep(2)
+        await self.viz_update_status("running")
         self.add_behaviour(self.ScanTerrain())
         self.add_behaviour(self.ReceiveMessages())
 

@@ -1,2 +1,2 @@
-COLLISION_RADIUS = 2
+COLLISION_RADIUS = 0.5
 TAG = "localhost"

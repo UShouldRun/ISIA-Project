@@ -25,8 +25,9 @@ class Rover(VisualizationMixin, Agent):
         map: Map,
         base_jid: str,
         base_position: Tuple[float, float],
+        base_radius: float = 5.0,
         move_step: float = 1.0,
-        obstacle_radius: float = 5.0,
+        obstacle_radius: float = 1.0,
         viz_server = None
     ) -> None:
         super().__init__(jid, password)
@@ -65,7 +66,7 @@ class Rover(VisualizationMixin, Agent):
                 agent_jid=jid,
                 position=position,
                 battery=self.energy,
-                color="red"
+                color="#00ffff"
             )
 
     # -------------------------------------------------------------------------
@@ -81,8 +82,8 @@ class Rover(VisualizationMixin, Agent):
     async def try_go_around(self, goal: Tuple[float, float]) -> Optional[Tuple[float, float]]:
         """Try simple local avoidance: random offset around the obstacle."""
         for _ in range(5):
-            offset_x = random.uniform(-ROVER_SPEED_UNIT_PER_SEC, ROVER_SPEED_UNIT_PER_SEC)
-            offset_y = random.uniform(-ROVER_SPEED_UNIT_PER_SEC, ROVER_SPEED_UNIT_PER_SEC)
+            offset_x = random.uniform(-0.5 * ROVER_SPEED_UNIT_PER_SEC, 0.5 * ROVER_SPEED_UNIT_PER_SEC)
+            offset_y = random.uniform(-0.5 * ROVER_SPEED_UNIT_PER_SEC, 0.5 * ROVER_SPEED_UNIT_PER_SEC)
             candidate = (self.position[0] + offset_x, self.position[1] + offset_y)
             if not self.world.collides(self.jid, candidate):
                 print(f"{CYAN}[{self.name}] Avoiding obstacle locally → {candidate}{RESET}")
@@ -335,7 +336,7 @@ class Rover(VisualizationMixin, Agent):
                 await rover.viz_update_battery(100 * rover.energy / MAX_ROVER_CHARGE)
 
                 dist_to_next_step = rover.calculate_distance(rover.position, next_step)
-                if dist_to_next_step < 2 * rover.move_step:
+                if dist_to_next_step < rover.move_step:
                     rover.curr += 1 if rover.status == "moving" else -1
 
                 print(f"{CYAN}[{rover.name}] {rover.status}... Current position: {rover.position}", end = '')

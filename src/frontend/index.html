@@ -15,7 +15,6 @@
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
             background: #111827;
             color: #ffffff;
-            /* overflow: hidden; removed to allow scrolling */
         }
 
         .container {
@@ -134,11 +133,15 @@
 
         canvas {
             border: 1px solid #374151;
-            cursor: crosshair;
+            cursor: grab; /* Default cursor for panning */
             background: #0f172a;
 
             max-width: none; 
             max-height: none;
+        }
+        
+        canvas.grabbing {
+            cursor: grabbing; /* Cursor when actively dragging */
         }
 
         .legend {
@@ -159,6 +162,7 @@
             width: 1rem;
             height: 1rem;
             border-radius: 0.25rem;
+            border: 1px solid #374151; /* Added border for contrast */
         }
 
         .right-panel {
@@ -388,8 +392,10 @@
             <!-- Canvas -->
             <div class="canvas-container">
                 <div class="canvas-title">Planetary Surface</div>
-                <canvas id="mainCanvas" width="600" height="600"></canvas>
+                <!-- Canvas is now sized dynamically in the script -->
+                <canvas id="mainCanvas"></canvas>
                 <div class="legend">
+                    <!-- Terrain Legend Items -->
                     <div class="legend-item">
                         <div class="legend-color" style="background: rgba(209, 213, 219, 0.2);"></div>
                         <span>Elevated Terrain (+1)</span>
@@ -403,19 +409,20 @@
                         <span>Depression (-1)</span>
                     </div>
                     <div class="legend-item">
-                        <div class="legend-color" style="background: rgba(59, 130, 246, 0.1);"></div>
-                        <span>Explored Cell</span>
+                        <div class="legend-color" style="background: rgba(59, 130, 246, 0.9);"></div>
+                        <span>Resource </span>
                     </div>
+                    <!-- Agent/Item Legend Items -->
                     <div class="legend-item">
-                        <div class="legend-color" style="background: #3b82f6;"></div>
+                        <div class="legend-color" style="background: #00ffff;"></div>
                         <span>Rover</span>
                     </div>
                     <div class="legend-item">
-                        <div class="legend-color" style="background: #f59e0b; clip-path: polygon(50% 0%, 100% 100%, 0% 100%);"></div>
+                        <div class="legend-color" style="background: #00F000; clip-path: polygon(50% 0%, 100% 100%, 0% 100%);"></div>
                         <span>Drone</span>
                     </div>
                     <div class="legend-item">
-                        <div class="legend-color" style="background: #8b5cf6; border-radius: 50%;"></div>
+                        <div class="legend-color" style="background: #ff00ff; border-radius: 50%;"></div>
                         <span>Base</span>
                     </div>
                     <div class="legend-item">
@@ -456,20 +463,41 @@
     </div>
 
     <script>
-        // State
+        // --- Configuration Constants ---
+        const CANVAS_SIZE_PX = 600;          // Fixed pixel size for the square canvas
+        const MAP_SIZE_CELLS = 1000;         // Total size of the simulated map (1000x1000)
+        const VIEWPORT_SIZE_CELLS = 100;     // The size of the received data chunk (100x100)
+        const CELL_SIZE_PX = CANVAS_SIZE_PX / VIEWPORT_SIZE_CELLS; // 600 / 100 = 6px
+
+        // --- State Variables (Global Scope) ---
         let ws = null;
         let isRunning = false;
         let agents = [];
         let resources = [];
         let hazards = [];
-        let exploredCells = new Set();
+        let exploredCells = new Set();       
         let selectedAgent = null;
+        let mapCells = {};                   
+        
+        // CRITICAL: World coordinates defining the loaded map chunk bounds
+        let mapMinX = 0;
+        let mapMinY = 0;
+        let mapMaxX = 0; // Calculated in initializeFullMap
+        let mapMaxY = 0; // Calculated in initializeFullMap
+        
+        let viewportX = 0;                   // Top-left x coordinate of the visible map section (World X)
+        let viewportY = 0;                   // Top-left y coordinate of the visible map section (World Y)
+        
+        // State variables for Mouse Panning
+        let isDragging = false;
+        let lastMouseX = 0;
+        let lastMouseY = 0;
 
-        const GRID_SIZE = 1000;
-        const CELL_SIZE = 5; // 1200x1200 map
 
         const canvas = document.getElementById('mainCanvas');
         const ctx = canvas.getContext('2d');
+        canvas.width = VIEWPORT_SIZE_CELLS * CELL_SIZE_PX;
+        canvas.height = VIEWPORT_SIZE_CELLS * CELL_SIZE_PX;
 
         // Initialize
         window.onload = function() {
@@ -478,12 +506,13 @@
             addMessage('System', 'Visualization interface loaded');
         };
 
-        // WebSocket connection
+        // WebSocket connection (omitted for brevity, assume original logic here)
         function connectWebSocket() {
             const statusEl = document.getElementById('connection-status');
             
             try {
-                ws = new WebSocket('ws://localhost:8080/ws');
+                // IMPORTANT: Ensure your Python server runs on this address
+                ws = new WebSocket('ws://localhost:8080/ws'); 
 
                 ws.onopen = () => {
                     console.log('Connected to SPADE');
@@ -516,35 +545,55 @@
                 statusEl.className = 'connection-status status-disconnected';
             }
         }
-
         // --- Map Initialization and Update Functions ---
 
         function initializeFullMap(cells) {
-            // This function loads the ENTIRE map terrain data into the global 'mapCells' object.
             mapCells = {}; // Clear any existing map data
+            
+            // CRITICAL: Reset bounds trackers
+            mapMinX = MAP_SIZE_CELLS;
+            mapMinY = MAP_SIZE_CELLS;
+            mapMaxX = 0;
+            mapMaxY = 0;
+            
+            // 1. Load data and determine minimum/maximum coordinates of the chunk
             cells.forEach(cell => {
                 const key = `${cell.x},${cell.y}`;
-                mapCells[key] = { ...cell, dust_storm: false }; // Ensure a default for dust_storm
+                mapCells[key] = { ...cell, dust_storm: false };
+                
+                mapMinX = Math.min(mapMinX, cell.x);
+                mapMinY = Math.min(mapMinY, cell.y);
+                mapMaxX = Math.max(mapMaxX, cell.x);
+                mapMaxY = Math.max(mapMaxY, cell.y);
             });
-            addMessage('System', `Full map data (${cells.length} cells) received and loaded.`);
+            
+            addMessage('System', `Map data received (${cells.length} cells). Bounds: (${mapMinX}, ${mapMinY}) to (${mapMaxX}, ${mapMaxY})`);
+            
+            // 2. Adjust viewport to immediately show the received data chunk
+            if (cells.length > 0) {
+                 // Set viewport origin to the smallest coordinates found in the data
+                 viewportX = mapMinX;
+                 viewportY = mapMinY;
+                 addMessage('System', `Viewport locked to chunk origin: (${viewportX}, ${viewportY})`);
+            }
+            
             render();
         }
 
         function updateMapCell(x, y, updates) {
-            // This function updates the state of a specific cell in the GLOBAL 'mapCells' object.
             const key = `${x},${y}`;
             if (mapCells[key]) {
                 mapCells[key] = { ...mapCells[key], ...updates };
                 render();
             }
         }
-
+        
         function handleMessage(data) {
             switch (data.type) {
-                case 'full_map_init': // Loads initial terrain data for the whole map
+                case 'full_map_init': 
                     initializeFullMap(data.map_cells);
                     break;
-                case 'map_cell_update': // Updates a single cell's state (e.g., dust storm) GLOBALLY
+                case 'map_cell_update': 
                     updateMapCell(data.x, data.y, data.updates);
                     break;
                 case 'agent_update':
@@ -556,7 +605,7 @@
                 case 'hazard_detected':
                     addHazard(data.hazard);
                     break;
-                case 'cell_explored':
+                case 'cell_explored': 
                     markCellExplored(data.x, data.y);
                     break;
                 case 'message':
@@ -577,6 +626,13 @@
             }
             renderAgents();
             render();
+        }
+
+        // DEPRECATED: Centering is disabled when the map size equals the viewport size
+        function centerViewportOnAgent(agent) {
+             // If map bounds equal viewport size, centering is not useful and just shifts the map.
+             // We keep the viewport locked to the map chunk's origin (mapMinX, mapMinY).
+             // You can re-enable this if you load a map chunk LARGER than 100x100.
         }
 
         function addResource(resource) {
@@ -639,11 +695,18 @@
                 
                 const batteryClass = agent.battery > 50 ? 'battery-high' : 
                                     agent.battery > 20 ? 'battery-medium' : 'battery-low';
+
+                // Check if agent is within the currently loaded map bounds (0 to 99)
+                const isOnMap = agent.x >= mapMinX && agent.x <= mapMaxX &&
+                                agent.y >= mapMinY && agent.y <= mapMaxY;
+                
+                const agentStatusText = isOnMap ? agent.status : 
+                                        `<span style="color: #fca5a5;">🚨 Out of Bounds</span>`;
                 
                 item.innerHTML = `
                     <div class="agent-header">
-                        <div class="agent-name">${agent.id}</div>
-                        <div class="agent-status">${agent.status}</div>
+                        <div class="agent-name">${agent.id} (${Math.floor(agent.x)}, ${Math.floor(agent.y)})</div>
+                        <div class="agent-status">${agentStatusText}</div>
                     </div>
                     <div class="battery-bar">
                         <div class="battery-fill ${batteryClass}" style="width: ${agent.battery}%"></div>
@@ -657,6 +720,15 @@
         function selectAgent(agent) {
             selectedAgent = agent;
             document.getElementById('commandsPanel').style.display = agent ? 'block' : 'none';
+            
+            // Add a console message if the agent is off-map to explain why the canvas doesn't move
+            const isOnMap = agent.x >= mapMinX && agent.x <= mapMaxX &&
+                            agent.y >= mapMinY && agent.y <= mapMaxY;
+            
+            if (!isOnMap) {
+                addMessage('System', `Agent ${agent.id} selected, but its position (${Math.floor(agent.x)}, ${Math.floor(agent.y)}) is outside the loaded map chunk (${mapMinX}-${mapMaxX}).`);
+            }
+
             renderAgents();
             render();
         }
@@ -691,114 +763,265 @@
             resources = [];
             hazards = [];
             exploredCells = new Set();
+            mapCells = {}; // Clear map data on reset
             selectedAgent = null;
+            viewportX = 0; // Reset viewport to origin
+            viewportY = 0;
+            mapMinX = mapMinY = mapMaxX = mapMaxY = 0; // Reset bounds
             renderAgents();
             render();
             addMessage('System', 'Visualization reset');
         }
+        
+        // --- Core Rendering Logic (Unchanged) ---
 
         function render() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            // Grid
+            // 1. Draw Terrain and Explored Cells (Background) - Optimized Loop
+            for (let vx = 0; vx < VIEWPORT_SIZE_CELLS; vx++) {
+                for (let vy = 0; vy < VIEWPORT_SIZE_CELLS; vy++) {
+                    // Calculate World Coordinates based on Viewport Origin
+                    const worldX = viewportX + vx;
+                    const worldY = viewportY + vy;
+                    const key = `${worldX},${worldY}`;
+                    const cell = mapCells[key]; 
+
+                    // Calculate drawing coordinates relative to the viewport
+                    const drawX = vx * CELL_SIZE_PX;
+                    const drawY = vy * CELL_SIZE_PX;
+                    
+                    if (cell) {
+                        // A. Draw Terrain Background based on the 'terrain' value
+                        let terrainColor = 'rgba(75, 85, 99, 0.3)'; 
+                        if (cell.terrain === 1) {
+                            terrainColor = 'rgba(209, 213, 219, 0.2)';
+                        } else if (cell.terrain === -1) {
+                            terrainColor = 'rgba(30, 41, 59, 0.6)';
+                        }
+                        ctx.fillStyle = terrainColor;
+                        ctx.fillRect(drawX, drawY, CELL_SIZE_PX, CELL_SIZE_PX);
+
+                        // B. Draw Explored Overlay
+                        if (exploredCells.has(key)) {
+                            ctx.fillStyle = 'rgba(59, 130, 246, 0.1)';
+                            ctx.fillRect(drawX, drawY, CELL_SIZE_PX, CELL_SIZE_PX);
+                        }
+
+                        // C. Draw Dust Storm Overlay (if active on this cell)
+                        if (cell.dust_storm) {
+                            ctx.fillStyle = 'rgba(245, 158, 11, 0.4)';
+                            ctx.fillRect(drawX, drawY, CELL_SIZE_PX, CELL_SIZE_PX);
+                        }
+                    } else {
+                        // Draw empty background if no cell data is loaded yet (off-map)
+                        ctx.fillStyle = '#0f172a';
+                        ctx.fillRect(drawX, drawY, CELL_SIZE_PX, CELL_SIZE_PX);
+                    }
+                }
+            }
+
+
+            // 2. Draw Grid (Only for the viewport)
             ctx.strokeStyle = '#374151';
             ctx.lineWidth = 0.5;
-            for (let i = 0; i <= GRID_SIZE; i++) {
+            for (let i = 0; i <= VIEWPORT_SIZE_CELLS; i++) {
+                // Vertical lines
                 ctx.beginPath();
-                ctx.moveTo(i * CELL_SIZE, 0);
-                ctx.lineTo(i * CELL_SIZE, GRID_SIZE * CELL_SIZE);
+                ctx.moveTo(i * CELL_SIZE_PX, 0);
+                ctx.lineTo(i * CELL_SIZE_PX, VIEWPORT_SIZE_CELLS * CELL_SIZE_PX);
                 ctx.stroke();
+                // Horizontal lines
                 ctx.beginPath();
-                ctx.moveTo(0, i * CELL_SIZE);
-                ctx.lineTo(GRID_SIZE * CELL_SIZE, i * CELL_SIZE);
+                ctx.moveTo(0, i * CELL_SIZE_PX);
+                ctx.lineTo(VIEWPORT_SIZE_CELLS * CELL_SIZE_PX, i * CELL_SIZE_PX);
                 ctx.stroke();
             }
 
-            // Explored cells
-            ctx.fillStyle = 'rgba(59, 130, 246, 0.1)';
-            exploredCells.forEach(cell => {
-                const [x, y] = cell.split(',').map(Number);
-                ctx.fillRect(x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
-            });
+            // 3. Draw Hazards, Resources, and Agents (Foreground items)
+            [...hazards, ...resources, ...agents].forEach(item => {
+                // Only draw if the item is within the viewport
+                if (item.x >= viewportX && item.x < viewportX + VIEWPORT_SIZE_CELLS &&
+                    item.y >= viewportY && item.y < viewportY + VIEWPORT_SIZE_CELLS) {
 
-            // Hazards
-            hazards.forEach(hazard => {
-                ctx.fillStyle = hazard.type === 'storm' ? 'rgba(239, 68, 68, 0.3)' : 'rgba(245, 158, 11, 0.3)';
-                ctx.beginPath();
-                ctx.arc(hazard.x * CELL_SIZE, hazard.y * CELL_SIZE, hazard.radius * CELL_SIZE, 0, 2 * Math.PI);
-                ctx.fill();
-            });
+                    // Calculate drawing coordinates relative to the viewport
+                    const drawX = (item.x - viewportX) * CELL_SIZE_PX + CELL_SIZE_PX / 2;
+                    const drawY = (item.y - viewportY) * CELL_SIZE_PX + CELL_SIZE_PX / 2;
 
-            // Resources
-            resources.forEach(resource => {
-                ctx.fillStyle = resource.discovered ? '#10b981' : 'rgba(16, 185, 129, 0.3)';
-                ctx.beginPath();
-                ctx.arc(resource.x * CELL_SIZE, resource.y * CELL_SIZE, 4, 0, 2 * Math.PI);
-                ctx.fill();
-                
-                if (resource.discovered) {
-                    ctx.strokeStyle = '#10b981';
-                    ctx.lineWidth = 2;
-                    ctx.stroke();
-                }
-            });
+                    if (item.type === 'storm' || item.type === 'rock') {
+                        // Hazards
+                        ctx.fillStyle = item.type === 'storm' ? 'rgba(239, 68, 68, 0.3)' : 'rgba(245, 158, 11, 0.3)';
+                        ctx.beginPath();
+                        const radiusPx = (item.radius || 1) * CELL_SIZE_PX;
+                        ctx.arc(drawX, drawY, radiusPx, 0, 2 * Math.PI);
+                        ctx.fill();
 
-            // Agents
-            agents.forEach(agent => {
-                ctx.fillStyle = agent.color || '#ffffff';
-                ctx.beginPath();
-                
-                if (agent.type === 'rover') {
-                    ctx.rect(agent.x * CELL_SIZE - 4, agent.y * CELL_SIZE - 4, 8, 8);
-                } else if (agent.type === 'drone') {
-                    ctx.moveTo(agent.x * CELL_SIZE, agent.y * CELL_SIZE - 5);
-                    ctx.lineTo(agent.x * CELL_SIZE + 4, agent.y * CELL_SIZE + 3);
-                    ctx.lineTo(agent.x * CELL_SIZE - 4, agent.y * CELL_SIZE + 3);
-                    ctx.closePath();
-                } else if (agent.type === 'base' || agent.type === 'satellite') {
-                    ctx.arc(agent.x * CELL_SIZE, agent.y * CELL_SIZE, 6, 0, 2 * Math.PI);
-                }
-                
-                ctx.fill();
+                    } else if (item.discovered !== undefined) {
+                        // Resources
+                        ctx.fillStyle = item.discovered ? 'rgba(59, 130, 246, 0.9)' : 'rgba(16, 185, 129, 0.3)';
+                        ctx.beginPath();
+                        ctx.arc(drawX, drawY, CELL_SIZE_PX * 0.4, 0, 2 * Math.PI); 
+                        ctx.fill();
+                        
+                        if (item.discovered) {
+                            ctx.strokeStyle = '#10b981';
+                            ctx.lineWidth = 2;
+                            ctx.stroke();
+                        }
+                    } else {
+                      // Agents
+                      const agent = item;
+                      ctx.fillStyle = agent.color || '#ffffff';
+                      ctx.beginPath();
+                      
+                      const shapeSize = CELL_SIZE_PX; 
 
-                // Battery bar
-                const batteryColor = agent.battery > 50 ? '#10b981' : 
-                                    agent.battery > 20 ? '#f59e0b' : '#ef4444';
-                ctx.fillStyle = batteryColor;
-                ctx.fillRect(
-                    agent.x * CELL_SIZE - 5,
-                    agent.y * CELL_SIZE + 8,
-                    (agent.battery / 100) * 10,
-                    2
-                );
-
-                // Selection highlight
-                if (selectedAgent?.id === agent.id) {
-                    ctx.strokeStyle = '#ffffff';
-                    ctx.lineWidth = 2;
-                    ctx.beginPath();
-                    ctx.arc(agent.x * CELL_SIZE, agent.y * CELL_SIZE, 10, 0, 2 * Math.PI);
-                    ctx.stroke();
+                      if (agent.type === 'rover') {
+                          ctx.rect(drawX - shapeSize/2, drawY - shapeSize/2, shapeSize, shapeSize);
+                          ctx.fill();
+                      } else if (agent.type === 'drone') {
+                          ctx.moveTo(drawX, drawY - shapeSize/2);
+                          ctx.lineTo(drawX + shapeSize/2, drawY + shapeSize/2);
+                          ctx.lineTo(drawX - shapeSize/2, drawY + shapeSize/2);
+                          ctx.closePath();
+                          ctx.fill();
+                      } else if (agent.type === 'base') {
+                          // Draw radius circle (outline only)
+                          ctx.strokeStyle = agent.color || '#8b5cf6';
+                          ctx.lineWidth = 2;
+                          ctx.arc(drawX, drawY, (agent.radius || 5) * CELL_SIZE_PX, 0, 2 * Math.PI);
+                          ctx.stroke();
+                          
+                          // Draw center point (filled)
+                          ctx.fillStyle = agent.color || '#8b5cf6';
+                          ctx.beginPath();
+                          ctx.arc(drawX, drawY, CELL_SIZE_PX * 0.3, 0, 2 * Math.PI);
+                          ctx.fill();
+                      }
+                      
+                      // Selection highlight
+                      if (selectedAgent?.id === agent.id) {
+                          ctx.strokeStyle = '#ffffff';
+                          ctx.lineWidth = 2;
+                          ctx.beginPath();
+                          ctx.arc(drawX, drawY, CELL_SIZE_PX * 0.8, 0, 2 * Math.PI);
+                          ctx.stroke();
+                      }
+                  }
                 }
             });
         }
 
-        // Canvas click handler
+
+        // --- Interaction Handlers (Click and Pan) ---
+        function clampViewport(x, y) {
+            // Calculate the maximum possible START coordinate (map Max - viewport Size + 1)
+            const maxViewX = mapMaxX - VIEWPORT_SIZE_CELLS + 1;
+            const maxViewY = mapMaxY - VIEWPORT_SIZE_CELLS + 1;
+
+            // Clamp the new viewport start coordinates
+            let newX = Math.max(mapMinX, Math.min(x, maxViewX));
+            let newY = Math.max(mapMinY, Math.min(y, maxViewY));
+            
+            // Handle edge case where map data hasn't been loaded yet (mapMinX/Y is huge/tiny)
+            if (mapMaxX === 0 && mapMinX === MAP_SIZE_CELLS) {
+                newX = 0;
+                newY = 0;
+            }
+
+            viewportX = newX;
+            viewportY = newY;
+        }
+
+        // Mouse Down (Start Dragging)
+        canvas.addEventListener('mousedown', function(e) {
+            isDragging = true;
+            lastMouseX = e.clientX;
+            lastMouseY = e.clientY;
+            canvas.classList.add('grabbing');
+            e.preventDefault(); 
+        });
+
+        // Mouse Up (Stop Dragging)
+        document.addEventListener('mouseup', function() {
+            isDragging = false;
+            canvas.classList.remove('grabbing');
+        });
+
+        // Mouse Move (Dragging Logic)
+        canvas.addEventListener('mousemove', function(e) {
+            if (!isDragging || mapMaxX === 0) return; // Don't pan if no data is loaded
+
+            const deltaX = e.clientX - lastMouseX;
+            const deltaY = e.clientY - lastMouseY;
+
+            // Convert pixel change to cell change 
+            const cellStepX = Math.floor(deltaX / CELL_SIZE_PX);
+            const cellStepY = Math.floor(deltaY / CELL_SIZE_PX);
+            
+            // Calculate potential new viewport positions
+            let potentialX = viewportX - cellStepX;
+            let potentialY = viewportY - cellStepY;
+            
+            // Clamp the viewport to the known map bounds
+            clampViewport(potentialX, potentialY);
+            
+            lastMouseX = e.clientX;
+            lastMouseY = e.clientY;
+
+            render();
+        });
+
+
+        // Canvas click handler (for agent selection, runs after mouseup)
         canvas.addEventListener('click', function(e) {
             const rect = canvas.getBoundingClientRect();
-            const x = (e.clientX - rect.left) / CELL_SIZE;
-            const y = (e.clientY - rect.top) / CELL_SIZE;
+            // Convert click coordinates to viewport cells, then to world cells
+            const viewportCellX = Math.floor((e.clientX - rect.left) / CELL_SIZE_PX);
+            const viewportCellY = Math.floor((e.clientY - rect.top) / CELL_SIZE_PX);
 
-            // Find clicked agent
+            const worldX = viewportX + viewportCellX;
+            const worldY = viewportY + viewportCellY;
+
+            // Find clicked agent in world coordinates
             const clicked = agents.find(agent => {
-                const dist = Math.sqrt(Math.pow(x - agent.x, 2) + Math.pow(y - agent.y, 2));
-                return dist < 1;
+                return Math.floor(agent.x) === worldX && Math.floor(agent.y) === worldY;
             });
 
             if (clicked) {
                 selectAgent(clicked);
             }
         });
+
+        // Simple panning using arrow keys (kept as an alternative)
+        document.addEventListener('keydown', (e) => {
+            if (mapMaxX === 0) return; // Don't pan if no data is loaded
+            const step = 1; 
+            let changed = false;
+            let potentialX = viewportX;
+            let potentialY = viewportY;
+
+            if (e.key === 'ArrowRight') {
+                potentialX += step;
+                changed = true;
+            } else if (e.key === 'ArrowLeft') {
+                potentialX -= step;
+                changed = true;
+            } else if (e.key === 'ArrowDown') {
+                potentialY += step;
+                changed = true;
+            } else if (e.key === 'ArrowUp') {
+                potentialY -= step;
+                changed = true;
+            }
+            
+            if (changed) {
+                e.preventDefault();
+                clampViewport(potentialX, potentialY);
+                render();
+            }
+        });
+
 
         // Render loop
         setInterval(render, 100);
