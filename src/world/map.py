@@ -200,13 +200,13 @@ class AStar():
             # map.print(s, g)
             count += 1
 
-            print(f"{YELLOW}AStar[RUNNING]: visited = {count}, curr = {map.rescale(curr)}, gScore = {gScore[curr]}, fScore = {fScore[curr]}{RESET}")
+            # print(f"{YELLOW}AStar[RUNNING]: visited = {count}, curr = {map.rescale(curr)}, gScore = {gScore[curr]}, fScore = {fScore[curr]}{RESET}")
             
             if curr == g:
                 print(f"{YELLOW}AStar[FINISHING]: reconstructing path{RESET}")
                 map.clear_visited()
                 reconstructed_path = AStar._reconstruct(map, path, s, g)
-                print(reconstructed_path)
+                # print(reconstructed_path)
                 return reconstructed_path
 
             neighbours: List[MapPos] = filter(
