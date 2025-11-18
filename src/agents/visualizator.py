@@ -115,11 +115,6 @@ class VisualizationServer:
                 
                 # For now, let's assume the Map is 100x100 and use its data directly.
                 cell_dict = cell.to_dict()
-                
-                # Override the coordinates to be 0-99 for the client visualization
-                cell_dict['x'] = x
-                cell_dict['y'] = y
-                
                 flat_map.append(cell_dict)
                 
         self.map_data = flat_map
@@ -142,7 +137,7 @@ class VisualizationServer:
                 "x": int(x),
                 "y": int(y),
                 "terrain": float(terrain),
-                "dust_storm": bool(dust_storm)
+                "dust_storm": dust_storm
             }
         })
 

@@ -305,11 +305,14 @@ class Base(VisualizationMixin, Agent):
     async def stop(self):
         """Called when agent is being stopped"""
         print(f"{MAGENTA}[{self.name}] Base shutting down...{RESET}")
+        await self.viz_send_message(f"Base shutting down")
+
         print(f"{MAGENTA}Collected...{RESET}")
         for resource, value in self.resources.items():
             print(f"{MAGENTA}  Found {resource}:{RESET}")
             print(f"{MAGENTA}    count = {value["count"]}{RESET}")
             print(f"{MAGENTA}    positions = {value["positions"]}{RESET}")
+        await self.viz_send_message(f"Collected {str(self.resources)}")
                 
         # Call parent's stop
         await super().stop()

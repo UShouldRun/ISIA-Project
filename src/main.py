@@ -120,19 +120,13 @@ def generate_world(config: Dict[str, Any], tag: str, viz_server) -> Tuple[World,
     
     return world, world_map, base_centers, rover_positions, drone_positions
 
-async def simulate_hazards(world_map: Map, viz_server: Any, interval: int = 5):
+async def simulate_hazards(world_map: Map, viz_server: Any, interval: int = 10):
     """
     Simulates dust storms and updates the map accordingly, sending updates to viz.
     """
-    async def clear_storm():
+    async def clear_storm(world_map: Map):
         """Resets the storm flag on all cells and returns True if any storm was cleared."""
         logging.info("[HAZARD] clearing for new storm...")
-        logging.info("[HAZARD] clearing for new storm...")
-        logging.info("[HAZARD] clearing for new storm...")
-        logging.info("[HAZARD] clearing for new storm...")
-        logging.info("[HAZARD] clearing for new storm...")
-        logging.info("[HAZARD] clearing for new storm...")
-    
 
         for i in range(world_map.columns):
             for j in range(world_map.rows):
@@ -163,33 +157,26 @@ async def simulate_hazards(world_map: Map, viz_server: Any, interval: int = 5):
                 flat_map.append(cell_dict)
                 
         await viz_server.send_map_updates(flat_map)
-            
-        return
 
     while True:
         try:
             await asyncio.sleep(interval)
         except asyncio.CancelledError:
             logging.info("[HAZARD] FAILEEEEEEEEEEEED...")
-            logging.info("[HAZARD] FAILEEEEEEEEEEEED...")
-            logging.info("[HAZARD] FAILEEEEEEEEEEEED...")
-            logging.info("[HAZARD] FAILEEEEEEEEEEEED...")
-            logging.info("[HAZARD] FAILEEEEEEEEEEEED...")
-
+            
             # Handle cancellation during sleep for clean shutdown
-            await clear_storm() # Clear any active storms before exit
+            await clear_storm(world_map) # Clear any active storms before exit
             raise
         
         logging.info("[HAZARD] Checking for new storm...")
 
-        # await clear_storm()
+        await clear_storm(world_map)
         logging.info("[HAZARD] Previous storm subsided. Map cells reset.")
         
-        # Randomly introduce a new storm (e.g., 10% chance)
         if random.random() < STORM_CHANCE: 
             center_x = random.randint(0, world_map.columns - 1)
             center_y = random.randint(0, world_map.rows - 1)
-            radius = random.randint(10, 30)
+            radius = random.randint(int(0.05 * world_map.columns), int(0.2 * world_map.columns))
 
             logging.warning(f"[HAZARD] New dust storm forming at ({center_x}, {center_y}) with radius {radius}.")
 
@@ -200,12 +187,11 @@ async def simulate_hazards(world_map: Map, viz_server: Any, interval: int = 5):
                     dist = ((cell.x - center_x) ** 2 + (cell.y - center_y) ** 2) ** 0.5
                     
                     if dist < radius:
-                        print("I GOT MADE")
-                          
                         world_map.make_dust_cell(i,j)
+
                     scale_factor = world_map.columns / 100 
 
-            flat_map  = [] 
+            flat_map = [] 
                   # Only iterate over the first 100x100 cells for the fixed visualization view
             max_viz_x = min(world_map.columns, 100)
             max_viz_y = min(world_map.rows, 100)
@@ -227,6 +213,7 @@ async def simulate_hazards(world_map: Map, viz_server: Any, interval: int = 5):
                     # For now, let's assume the Map is 100x100 and use its data directly.
                     cell_dict = cell.to_dict()
                     flat_map.append(cell_dict)
+            print(f"Any cell with dust? {any(cell["dust_storm"] for cell in flat_map)}")
                     
             await viz_server.send_map_updates(flat_map)
                 
@@ -377,7 +364,7 @@ async def main():
     print(f"\n[MAIN] All agents started. Running simulation for {duration} seconds...")
     print(f"[MAIN] Summary: {len(bases)} bases, {len(drones)} drones, {len(rovers)} rovers\n")
     
-    hazard_task = asyncio.create_task(simulate_hazards(world_map, viz_server, interval=5))
+    hazard_task = asyncio.create_task(simulate_hazards(world_map, viz_server, interval=10))
 
     # --- RUN SIMULATION ---
     await asyncio.sleep(duration)

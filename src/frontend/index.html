@@ -572,7 +572,7 @@
             // 1. Load data and determine minimum/maximum coordinates of the chunk
             cells.forEach(cell => {
                 const key = `${cell.x},${cell.y}`;
-                mapCells[key] = { ...cell, dust_storm: false };
+                mapCells[key] = { ...cell };
                 
                 mapMinX = Math.min(mapMinX, cell.x);
                 mapMinY = Math.min(mapMinY, cell.y);
@@ -1002,7 +1002,6 @@
 
             render();
         });
-
 
         // Canvas click handler (for agent selection, runs after mouseup)
         canvas.addEventListener('click', function(e) {
