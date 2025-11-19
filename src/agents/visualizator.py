@@ -85,35 +85,19 @@ class VisualizationServer:
     # -------------------------------------------------------------
     # HIGH-LEVEL MESSAGE HELPERS (CALLED BY MIXIN)
     # -------------------------------------------------------------
-    def initialize_map(self, planet_map: Map):
+    def initialize_map(self, world_map: Map):
         """
         Receives the actual Map object from the main world generation and
         prepares the flat list format for the visualization client.
         """
         flat_map = []
+        scale_factor = world_map.columns / 100 
+        max_viz_x = min(world_map.columns, 100)
+        max_viz_y = min(world_map.rows, 100)
         
-        # Scaling factor: assuming your map is 1000x1000 and visualization is 100x100
-        # If the map size is the same (100x100), factor is 1.
-        scale_factor = planet_map.columns / 100 
-
-        # Only iterate over the first 100x100 cells for the fixed visualization view
-        max_viz_x = min(planet_map.columns, 100)
-        max_viz_y = min(planet_map.rows, 100)
-        
-        # Iterate over the grid (columns, then rows) and flatten it
         for x in range(max_viz_x):
             for y in range(max_viz_y):
-                # Use the cell from the simulation's map
-                cell = planet_map.grid[x][y]
-                # Scale coordinates if necessary, but for a 100x100 view, we often use the base index
-                
-                # To scale down coordinates if the map is >100x100:
-                # If your map is 1000x1000, we'd need to sample and map x/y values differently.
-                # For simplicity, we assume the simulation map is 100x100 and use indices 0-99.
-                
-                # If your map is larger, you might average or pick the top-left cell for a 10:1 reduction.
-                
-                # For now, let's assume the Map is 100x100 and use its data directly.
+                cell = world_map.grid[x][y]
                 cell_dict = cell.to_dict()
                 flat_map.append(cell_dict)
                 
@@ -145,7 +129,6 @@ class VisualizationServer:
         """
         Handles bulk updates of cell properties (like dust_storm status).
         """
-        print("HERE")
         self.map_data = map_data
         await self.broadcast({
             "type": "update_map",

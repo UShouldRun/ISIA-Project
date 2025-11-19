@@ -11,14 +11,14 @@
         "jid": "base1",
         "name": "base1",
         "center": [50, 50],
-        "radius": 5,
+        "radius": 0.7,
         "password": "base1"
       },
       {
         "jid": "base2",
         "name": "base2",
         "center": [10, 10],
-        "radius": 5,
+        "radius": 0.7,
         "password": "base2"
       }
     ],

@@ -11,7 +11,7 @@
       "jid": "base1",
       "name": "base1",
       "center": [30, 30],
-      "radius": 5,
+      "radius": 0.7,
       "password": "base1"
     }
   ],

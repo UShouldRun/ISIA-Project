@@ -6,7 +6,6 @@ import json
 import sys
 from typing import Tuple, List, Dict, Any
 
-from world.setting import TAG
 from world.world import World, WorldObject
 from world.map import Map
 from agents.base import Base
@@ -56,7 +55,7 @@ def random_pos_in_base(world: World, base_name: str, base_centers: Dict[str, Tup
     for _ in range(max_attempts):
         x = random.uniform(base_center[0] - 0.15 * base_radius, base_center[0] + 0.15 * base_radius)
         y = random.uniform(base_center[1] - 0.15 * base_radius, base_center[1] + 0.15 * base_radius)
-        if all(((x - o.pos[0]) ** 2 + (y - o.pos[1]) ** 2) ** 0.5 > 1 for o in world.objects):
+        if all(((x - o.pos[0]) ** 2 + (y - o.pos[1]) ** 2) ** 0.5 > COLLISION_RADIUS for o in world.objects):
             return (x, y)
     # Fallback if collision-free position not found
     print("[WARNING] Could not find collision-free position, using fallback")
@@ -72,8 +71,6 @@ def generate_world(config: Dict[str, Any], tag: str, viz_server) -> Tuple[World,
     map_limit = tuple(world_config.get("map_limit", [100, 100]))
     
     world_map = Map(map_limit)
-
-    viz_server.initialize_map(world_map)
 
     world = World([])
     
@@ -135,24 +132,12 @@ async def simulate_hazards(world_map: Map, viz_server: Any, interval: int = 10):
                     world_map.clear_dust_cell(i, j)
 
         flat_map  = [] 
-              # Only iterate over the first 100x100 cells for the fixed visualization view
         max_viz_x = min(world_map.columns, 100)
         max_viz_y = min(world_map.rows, 100)
         
-        # Iterate over the grid (columns, then rows) and flatten it
         for x in range(max_viz_x):
             for y in range(max_viz_y):
-                # Use the cell from the simulation's map
                 cell = world_map.grid[x][y]
-                # Scale coordinates if necessary, but for a 100x100 view, we often use the base index
-                
-                # To scale down coordinates if the map is >100x100:
-                # If your map is 1000x1000, we'd need to sample and map x/y values differently.
-                # For simplicity, we assume the simulation map is 100x100 and use indices 0-99.
-                
-                # If your map is larger, you might average or pick the top-left cell for a 10:1 reduction.
-                
-                # For now, let's assume the Map is 100x100 and use its data directly.
                 cell_dict = cell.to_dict()
                 flat_map.append(cell_dict)
                 
@@ -183,7 +168,6 @@ async def simulate_hazards(world_map: Map, viz_server: Any, interval: int = 10):
             for i in range(world_map.columns):
                 for j in range(world_map.rows):
                     cell = world_map.get_cell(i, j)
-                    # Note: cell.x and cell.y are grid coordinates, not world coordinates.
                     dist = ((cell.x - center_x) ** 2 + (cell.y - center_y) ** 2) ** 0.5
                     
                     if dist < radius:
@@ -192,31 +176,17 @@ async def simulate_hazards(world_map: Map, viz_server: Any, interval: int = 10):
                     scale_factor = world_map.columns / 100 
 
             flat_map = [] 
-                  # Only iterate over the first 100x100 cells for the fixed visualization view
             max_viz_x = min(world_map.columns, 100)
             max_viz_y = min(world_map.rows, 100)
             
-            # Iterate over the grid (columns, then rows) and flatten it
             for x in range(max_viz_x):
                 for y in range(max_viz_y):
-                    # Use the cell from the simulation's map
                     cell = world_map.grid[x][y]
-
-                    # Scale coordinates if necessary, but for a 100x100 view, we often use the base index
-                    
-                    # To scale down coordinates if the map is >100x100:
-                    # If your map is 1000x1000, we'd need to sample and map x/y values differently.
-                    # For simplicity, we assume the simulation map is 100x100 and use indices 0-99.
-                    
-                    # If your map is larger, you might average or pick the top-left cell for a 10:1 reduction.
-                    
-                    # For now, let's assume the Map is 100x100 and use its data directly.
                     cell_dict = cell.to_dict()
                     flat_map.append(cell_dict)
+
             print(f"Any cell with dust? {any(cell["dust_storm"] for cell in flat_map)}")
-                    
             await viz_server.send_map_updates(flat_map)
-                
             logging.warning(f"[HAZARD] Map updated.")
         
         else:
@@ -236,7 +206,7 @@ async def main():
     
     # --- CREATE VISUALIZATION SERVER ---
     viz_server = VisualizationServer()
-    runner = await viz_server.start_server()
+    _ = await viz_server.start_server()
 
     print("[MAIN] Waiting for visualization client to connect...")
     connected = await viz_server.wait_for_client(timeout=30)  # 30 second timeout
@@ -255,6 +225,7 @@ async def main():
     
     # --- WORLD INITIALIZATION ---
     world, world_map, base_centers, rover_positions, drone_positions = generate_world(config, tag, viz_server)
+    viz_server.initialize_map(world_map)
     
     # --- BUILD JID MAPS ---
     base_jids = {b["jid"]: f"{b['jid']}@{tag}" for b in base_configs}
@@ -341,7 +312,6 @@ async def main():
             world,
             world_map,
             base_jid=rover_base_jid,
-            base_position=bases[base_jid].position,
             base_radius=bases[base_jid].radius,
             viz_server=viz_server
         )

@@ -24,6 +24,13 @@ case "$1" in
   up)
     echo "Starting container..."
     docker_cmd compose up -d
+    sleep 2  # wait for server to start
+    if command -v xdg-open >/dev/null 2>&1; then
+      xdg-open http://localhost:"$CLIENT_PORT"/index.html
+    elif command -v open >/dev/null 2>&1; then
+      open http://localhost:"${CLIENT_PORT}"/index.html
+    fi
+    echo "\033[32mRunning on http://localhost:"${CLIENT_PORT}"/index.html\033[0m"
     ;;
   down)
     echo "Stopping container..."

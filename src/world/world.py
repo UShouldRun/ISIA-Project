@@ -1,7 +1,7 @@
 from typing import Tuple, List, Union
 from math import sqrt
 
-from .setting import COLLISION_RADIUS
+from settings import COLLISION_RADIUS
 
 class WorldObject:
     """Basic world entity with a position."""

@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Planetary Exploration - SPADE Visualization</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="connection-status" class="connection-status status-disconnected">
+    Connecting...
+  </div>
+
+  <div class="container">
+    <!-- Header -->
+    <div class="header">
+      <div>
+        <div class="title">🚀 Planetary Exploration System</div>
+        <div class="subtitle">Multi-Agent SPADE Simulation</div>
+      </div>
+      <div class="controls">
+        <button id="startBtn" class="btn-start" onclick="toggleSimulation()">Start Mission</button>
+        <button id="resetBtn" class="btn-reset" onclick="resetSimulation()">Reset</button>
+      </div>
+    </div>
+
+    <!-- Stats -->
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div>
+          <div class="stat-value" id="terrainMapped">0%</div>
+          <div class="stat-label">Terrain Mapped</div>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div>
+          <div class="stat-value" id="resourcesFound">0</div>
+          <div class="stat-label">Resources Found</div>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div>
+          <div class="stat-value" id="avgEnergy">100%</div>
+          <div class="stat-label">Avg Energy</div>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div>
+          <div class="stat-value" id="missionTime">0s</div>
+          <div class="stat-label">Mission Time</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="main-content">
+      <!-- Canvas -->
+      <div class="canvas-container">
+        <div class="canvas-title">Planetary Surface</div>
+        <canvas id="mainCanvas"></canvas>
+        <div class="legend">
+          <div class="legend-item">
+            <div class="legend-color" style="background: rgba(209, 213, 219, 0.2);"></div>
+            <span>Elevated Terrain (+1)</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-color" style="background: rgba(75, 85, 99, 0.3);"></div>
+            <span>Flat Terrain (0)</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-color" style="background: rgba(30, 41, 59, 0.6);"></div>
+            <span>Depression (-1)</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-color" style="background: rgba(59, 130, 246, 0.9);"></div>
+            <span>Resource </span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-color" style="background: #00ffff;"></div>
+            <span>Rover</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-color" style="background: #00F000; clip-path: polygon(50% 0%, 100% 100%, 0% 100%);"></div>
+            <span>Drone</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-color" style="background: #ff00ff; border-radius: 50%;"></div>
+            <span>Base</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-color" style="background: #10b981; border-radius: 50%;"></div>
+            <span>Resource</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-color" style="background: rgba(239, 181, 73, 0.7);"></div>
+            <span>Dust Storm</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right Panel -->
+      <div class="right-panel">
+        <!-- Agents -->
+        <div class="panel">
+          <div class="panel-title">Active Agents</div>
+          <div id="agentsList" class="agents-list"></div>
+          <div id="commandsPanel" class="commands" style="display: none;">
+            <div class="commands-title">Commands</div>
+            <div class="commands-grid">
+              <button class="btn-start cmd-btn" onclick="sendCommand('explore')">Explore</button>
+              <button class="btn-pause cmd-btn" onclick="sendCommand('return')">Return</button>
+              <button class="btn-reset cmd-btn" onclick="sendCommand('scan')">Scan</button>
+              <button class="btn-start cmd-btn" onclick="sendCommand('recharge')">Recharge</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Messages -->
+        <div class="panel">
+          <div class="panel-title">Communication Log</div>
+          <div id="messagesList" class="messages-list">
+            <div id="messagesContainer" class="messages-container"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="main.js" defer></script>
+</body>
+</html>

@@ -13,3 +13,12 @@ services:
       - ./src:/app/src
       - ./sims:/app/sims
     restart: unless-stopped
+
+  spade_web:
+    image: python:3.12-slim
+    working_dir: /app
+    volumes:
+      - ./public:/app
+    command: python -m http.server ${CLIENT_PORT}
+    ports:
+      - "${CLIENT_PORT}:${CLIENT_PORT}"

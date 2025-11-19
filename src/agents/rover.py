@@ -24,9 +24,8 @@ class Rover(VisualizationMixin, Agent):
         world: World,
         map: Map,
         base_jid: str,
-        base_position: Tuple[float, float],
         base_radius: float = 5.0,
-        move_step: float = 1.0,
+        move_step: float = ROVER_SPEED_UNIT_PER_SEC,
         obstacle_radius: float = 1.0,
         viz_server = None
     ) -> None:
@@ -35,7 +34,7 @@ class Rover(VisualizationMixin, Agent):
         self.world = world
         self.map = map
         self.base_jid = base_jid
-        self.base_position = base_position
+        self.base_position = position
 
         # TODO: IMPLEMENT ENERGY CONSUMPTION
         self.energy = MAX_ROVER_CHARGE
@@ -72,12 +71,9 @@ class Rover(VisualizationMixin, Agent):
     # -------------------------------------------------------------------------
     # UTILITIES
     # ------------------------------------------------------------------------- 
-    def get_dpos(self, curr: Tuple[float, float], goal: Tuple[float, float]) -> Tuple[int, int]:
+    def get_dpos(self, curr: Tuple[float, float], next: Tuple[float, float]) -> Tuple[int, int]:
         """Compute one-step delta toward goal."""
-        return (
-            1 if curr[0] < goal[0] else -1 if curr[0] > goal[0] else 0,
-            1 if curr[1] < goal[1] else -1 if curr[1] > goal[1] else 0,
-        )
+        return (next[0] - curr[0], next[1] - curr[1])
 
     async def try_go_around(self, goal: Tuple[float, float]) -> Optional[Tuple[float, float]]:
         """Try simple local avoidance: random offset around the obstacle."""
@@ -299,62 +295,93 @@ class Rover(VisualizationMixin, Agent):
             rover = self.agent
 
             if rover.goal == None:
-                print(f"{CYAN}[{rover.name}] No goal set, cancelling MoveAlongPath{RESET}")
+                print(f"{cyan}[{rover.name}] no goal set, cancelling movealongpath{reset}")
                 self.kill()
                 await asyncio.sleep(2)
                 return
 
             if rover.status not in ["moving", "returning"]:
-                print(f"{CYAN}[{rover.name}] Doing another task, cancelling MoveAlongPath{RESET}")
+                print(f"{cyan}[{rover.name}] doing another task, cancelling movealongpath{reset}")
                 self.kill()
                 await asyncio.sleep(2)
                 return
 
             if not rover.path:
-                print(f"{CYAN}[{rover.name}] Could not compute path to goal {rover.goal}{RESET}")
+                print(f"{cyan}[{rover.name}] could not compute path to goal {rover.goal}{reset}")
                 self.kill()
                 await asyncio.sleep(2)
                 return
 
-            next_step = rover.path[rover.curr]
+            s_path = len(rover.path)
+
+            if rover.curr < 0:
+                rover.curr = 0
+            if rover.curr >= s_path:
+                rover.curr = s_path - 1            
+
+            next_is_goal = (
+                (rover.status == "returning" and rover.curr == 0) or
+                (rover.status == "moving" and rover.curr == s_path - 1)
+            )
+
+            next_step = rover.path[rover.curr] if not next_is_goal else rover.goal
+            dist_to_next_step = rover.calculate_distance(rover.position, next_step) 
+
             dx, dy = rover.get_dpos(rover.position, next_step)
-            new_pos = (rover.position[0] + dx * rover.move_step, rover.position[1] + dy * rover.move_step)
-            rover.energy -= rover.calculate_distance((0, 0), (dx, dy)) * rover.move_step * ENERGY_PER_DISTANCE_UNIT 
-            await asyncio.sleep(rover.move_step / ROVER_SPEED_UNIT_PER_SEC)
+            step_strength = rover.move_step if not next_is_goal else min(rover.move_step, 1)
+            step_size = min(step_strength, dist_to_next_step)
+
+            dx /= dist_to_next_step
+            dy /= dist_to_next_step
+
+            new_pos = (rover.position[0] + dx * step_size, rover.position[1] + dy * step_size)
+
+            rover.energy -= step_size * ENERGY_PER_DISTANCE_UNIT
+            if rover.energy < 0:
+                rover.energy = 0
+
+            sleep_time = step_size / (SIMULATION_SPEED * ROVER_SPEED_UNIT_PER_SEC)
+            await asyncio.sleep(max(0.001, sleep_time))
 
             collisions = rover.world.collides(rover.jid, new_pos)
             s_collisions = len(collisions)
             if s_collisions > 0 and not (s_collisions == 1 and collisions[0].id == rover.base_jid):
-                print(f"{CYAN}[{rover.name}] Collision detected near {new_pos}, collisions: {collisions}{RESET}")
-                await rover.viz_send_message(f"Collision detected! Attempting to avoid obstacle")
+                print(f"{CYAN}[{rover.name}] collision detected near {new_pos}, collisions: {collisions}{RESET}")
+                await rover.viz_send_message(f"collision detected! attempting to avoid obstacle")
 
                 alt = await rover.try_go_around(next_step)
                 if alt:
                     rover.position = alt
-                    print(f"{CYAN}[{rover.name}] Avoided obstacle locally.{RESET}")
+                    print(f"{CYAN}[{rover.name}] avoided obstacle locally.{RESET}")
                 else:
-                    print(f"{CYAN}[{rover.name}] Could not avoid locally, CRASH.{RESET}")
-                    await rover.viz_send_message(f"CRASH: Unable to avoid obstacle")
+                    print(f"{CYAN}[{rover.name}] could not avoid locally, crash.{RESET}")
+                    await rover.viz_send_message(f"crash: unable to avoid obstacle")
                     return
 
             else:
                 rover.position = new_pos
 
+                distance_after_move = rover.calculate_distance(rover.position, next_step)
+                arrived_next_step = distance_after_move <= COLLISION_RADIUS
+                if arrived_next_step:
+                    rover.position = next_step if not next_is_goal else rover.goal
+                    rover.curr += 1 if rover.status == "moving" else -1
+                    
                 await rover.viz_update_position(rover.position)
                 await rover.viz_update_battery(100 * rover.energy / MAX_ROVER_CHARGE)
+ 
+                print(f"{CYAN}[{rover.name}] {rover.status}... current position: {rover.position}", end = '')
+                print(f", energy: {(100 * rover.energy / MAX_ROVER_CHARGE):.1f}%", end = '')
+                print(f", distance left: {rover.calculate_distance(rover.position, rover.goal)}{RESET}")
 
-                dist_to_next_step = rover.calculate_distance(rover.position, next_step)
-                if dist_to_next_step < rover.move_step:
-                    rover.curr += 1 if rover.status == "moving" else -1
+                if not arrived_next_step:
+                    return
 
-                print(f"{CYAN}[{rover.name}] {rover.status}... Current position: {rover.position}", end = '')
-                print(f", Energy: {(100 * rover.energy/MAX_ROVER_CHARGE):.1f}%", end = '')
-                print(f", Distance left: {rover.calculate_distance(rover.position, rover.goal)}{RESET}")
-
-                if rover.status == "moving" and rover.curr == len(rover.path):
+                if rover.status == "moving" and rover.curr == s_path - 1:
                     rover.status = "arrived"
-                    print(f"{CYAN}[{rover.name}] Arrived at mission goal {rover.goal}{RESET}")
-                    await rover.viz_send_message(f"Arrived at target location {rover.goal}")
+
+                    print(f"{CYAN}[{rover.name}] arrived at mission goal {rover.goal}{RESET}")
+                    await rover.viz_send_message(f"arrived at target location {rover.goal}")
                     await rover.viz_update_status(rover.status)
 
                     msg = Message(
@@ -369,7 +396,6 @@ class Rover(VisualizationMixin, Agent):
                     self.kill()
                     rover.goal = rover.base_position
                     rover.status = "returning"
-                    rover.curr -= 1
                     rover.add_behaviour(rover.MoveAlongPath())
 
                 elif rover.status == "returning" and rover.curr == 0:
@@ -378,8 +404,8 @@ class Rover(VisualizationMixin, Agent):
                     rover.goal = None
                     rover.is_on_base = True
 
-                    print(f"{CYAN}[{rover.name}] Returned to base successfully at {rover.position}{RESET}")
-                    await rover.viz_send_message(f"Successfully returned to base")
+                    print(f"{CYAN}[{rover.name}] returned to base successfully at {rover.position}{RESET}")
+                    await rover.viz_send_message(f"successfully returned to base")
                     await rover.viz_update_status(rover.status)
 
                     msg = Message(
@@ -390,8 +416,6 @@ class Rover(VisualizationMixin, Agent):
 
                     await self.send(msg)
                     self.kill()
-
-            await asyncio.sleep(0.1)
 
     # -------------------------------------------------------------------------
     # NEW BEHAVIOUR — ANALYZE SOIL
