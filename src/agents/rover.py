@@ -439,6 +439,12 @@ class Rover(VisualizationMixin, Agent):
                 self.kill()
                 await asyncio.sleep(2)
                 return
+            
+            if rover.energy == 0:
+                print(f"{cyan}[{rover.name}] Rover ran out of energy{reset}")
+                self.kill()
+                await asyncio.sleep(2)
+                return
 
             s_path = len(rover.path)
 
