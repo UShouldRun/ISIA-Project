@@ -254,7 +254,7 @@ class Base(VisualizationMixin, Agent):
             and resource discovery notifications.
             """
             base = self.agent
-            msg = await self.receive(timeout=5)
+            msg = await self.receive(timeout=3)
 
             if msg:
                 sender = str(msg.sender).split("@")[0]
@@ -343,8 +343,6 @@ class Base(VisualizationMixin, Agent):
                         has_rovers_msg.body = str({"inform": "has_rovers_available"})
                         print(f"{MAGENTA}[{base.name}] Sending inform bid to {drone}, rovers available{RESET}")
                         await self.send(has_rovers_msg)
-
-            await asyncio.sleep(1)
 
     async def setup(self):
         """

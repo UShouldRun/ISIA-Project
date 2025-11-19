@@ -6,6 +6,7 @@ const CELL_SIZE_PX = CANVAS_SIZE_PX / VIEWPORT_SIZE_CELLS; // 600 / 100 = 6px
 // --- State Variables (Global Scope) ---
 let ws = null;
 let isRunning = false;
+let simulationStarted = false;
 let agents = [];
 let resources = [];
 let hazards = [];
@@ -27,6 +28,9 @@ let isDragging = false;
 let lastMouseX = 0;
 let lastMouseY = 0;
 
+let reconnectAttempts = 0;
+const maxReconnectDelay = 5000; // 5 seconds max
+
 const canvas = document.getElementById('mainCanvas');
 const ctx = canvas.getContext('2d');
 canvas.width = VIEWPORT_SIZE_CELLS * CELL_SIZE_PX;
@@ -39,7 +43,7 @@ window.onload = function() {
   addMessage('System', 'Visualization interface loaded');
 };
 
-// WebSocket connection (omitted for brevity, assume original logic here)
+// WebSocket connection
 function connectWebSocket() {
   const statusEl = document.getElementById('connection-status');
   
@@ -52,11 +56,11 @@ function connectWebSocket() {
       statusEl.textContent = '✓ Connected';
       statusEl.className = 'connection-status status-connected';
       addMessage('System', 'Connected to SPADE system');
+      reconnectAttempts = 0; // Reset counter on successful connection 
     };
 
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
-      // console.log(data);
       handleMessage(data);
     };
 
@@ -70,15 +74,66 @@ function connectWebSocket() {
       console.log('Disconnected from SPADE');
       statusEl.textContent = '✗ Disconnected';
       statusEl.className = 'connection-status status-disconnected';
-      // Try to reconnect after 3 seconds
-      setTimeout(connectWebSocket, 3000);
+      
+      // Exponential backoff: 500ms, 1s, 2s, 4s, 5s max
+      reconnectAttempts++;
+      const delay = Math.min(500 * Math.pow(2, reconnectAttempts - 1), maxReconnectDelay);
+      console.log(`Reconnecting in ${delay}ms (attempt ${reconnectAttempts})...`);
+      setTimeout(connectWebSocket, delay);
     };
+
   } catch (error) {
     console.log('WebSocket not available:', error);
     statusEl.textContent = '✗ No Connection';
     statusEl.className = 'connection-status status-disconnected';
+    setTimeout(connectWebSocket, 1000);
   }
 }
+
+// --- Simulation Start Functions ---
+
+function startSimulation() {
+  const configPanel = document.getElementById('configPanel');
+  configPanel.style.display = 'block';
+  addMessage('System', 'Enter configuration file and confirm to start simulation');
+}
+
+function confirmStartSimulation() {
+  const configFile = document.getElementById('configFile').value.trim();
+  
+  if (!configFile) {
+    addMessage('System', 'Error: Please enter a configuration file name');
+    return;
+  }
+
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({
+      type: 'start_simulation',
+      config_file: configFile
+    }));
+    
+    addMessage('System', `Requesting simulation start with config: ${configFile}`);
+    
+    // Hide config panel and update UI
+    document.getElementById('configPanel').style.display = 'none';
+    document.getElementById('startSimBtn').style.display = 'none';
+    document.getElementById('startBtn').style.display = 'inline-block';
+    
+    simulationStarted = true;
+
+    ws.send(JSON.stringify({
+      type: "request_stats_and_map_data"
+    }));
+  } else {
+    addMessage('System', 'Error: Not connected to server');
+  }
+}
+
+function cancelStartSimulation() {
+  document.getElementById('configPanel').style.display = 'none';
+  addMessage('System', 'Simulation start cancelled');
+}
+
 // --- Map Initialization and Update Functions ---
 
 function initializeFullMap(cells) {
@@ -151,6 +206,24 @@ function handleMessage(data) {
     case 'stats':
       updateStats(data.stats);
       break;
+    case 'simulation_started':
+      addMessage('System', 'Simulation started successfully');
+      break;
+    case 'simulation_stopped':
+      addMessage('System', 'Simulation stopped');
+      simulationStarted = false;
+      document.getElementById('startSimBtn').style.display = 'inline-block';
+      document.getElementById('startBtn').style.display = 'none';
+      break;
+    case 'simulation_paused':
+      addMessage('System', 'Simulation paused');
+      break;
+    case 'simulation_resumed':
+      addMessage('System', 'Simulation resumed');
+      break;
+    case 'error':
+      addMessage('Error', data.message || 'Unknown error occurred');
+      break;
   }
 }
 
@@ -165,13 +238,6 @@ function updateAgent(agentData) {
   render();
 }
 
-// DEPRECATED: Centering is disabled when the map size equals the viewport size
-function centerViewportOnAgent(agent) {
-   // If map bounds equal viewport size, centering is not useful and just shifts the map.
-   // We keep the viewport locked to the map chunk's origin (mapMinX, mapMinY).
-   // You can re-enable this if you load a map chunk LARGER than 100x100.
-}
-
 function addResource(resource) {
   const exists = resources.find(r => r.id === resource.id);
   if (!exists) {
@@ -182,11 +248,7 @@ function addResource(resource) {
 }
 
 function addHazard(hazard) {
-  const exists = hazards.find(h => h.id === hazard.id);
-  if (!exists) {
-    hazards.push(hazard);
-    addMessage('Alert', `Hazard: ${hazard.type} at (${Math.floor(hazard.x)}, ${Math.floor(hazard.y)})`);
-  }
+  addMessage('Alert', `Hazard: ${hazard.id} at (${Math.floor(hazard.x)}, ${Math.floor(hazard.y)})`);
   render();
 }
 
@@ -196,10 +258,11 @@ function markCellExplored(x, y) {
 }
 
 function updateStats(stats) {
-  document.getElementById('terrainMapped').textContent = stats.terrainMapped.toFixed(1) + '%';
-  document.getElementById('resourcesFound').textContent = stats.resourcesFound;
+  document.getElementById('terrainMapped').textContent = stats.terrainMapped.toFixed(4) + '%';
+  document.getElementById('resourcesFound').textContent = Object.values(stats.resourcesFound)
+                             .reduce((sum, val) => sum + (typeof val === 'number' ? val : 0), 0);
   document.getElementById('avgEnergy').textContent = stats.totalEnergy.toFixed(0) + '%';
-  document.getElementById('missionTime').textContent = stats.missionTime + 's';
+  document.getElementById('hazards').textContent = stats.hazards;
 }
 
 function addMessage(sender, content) {
@@ -215,6 +278,14 @@ function addMessage(sender, content) {
   // Auto-scroll to bottom to show newest message
   const messagesList = document.getElementById('messagesList');
   messagesList.scrollTop = messagesList.scrollHeight;
+}
+
+function clearMessages() {
+  const messagesList = document.getElementById('messagesList');
+  if (messagesList) {
+    messagesList.innerHTML = '';  // Clear all messages
+    messagesList.scrollTop = 0;   // Reset scroll to top
+  }
 }
 
 function renderAgents() {
@@ -234,7 +305,7 @@ function renderAgents() {
     const batteryClass = agent.battery > 50 ? 'battery-high' : 
               agent.battery > 20 ? 'battery-medium' : 'battery-low';
 
-    // Check if agent is within the currently loaded map bounds (0 to 99)
+    // Check if agent is within the currently loaded map bounds
     const isOnMap = agent.x >= mapMinX && agent.x <= mapMaxX &&
             agent.y >= mapMinY && agent.y <= mapMaxY;
     
@@ -259,7 +330,7 @@ function selectAgent(agent) {
   selectedAgent = agent;
   document.getElementById('commandsPanel').style.display = agent ? 'block' : 'none';
   
-  // Add a console message if the agent is off-map to explain why the canvas doesn't move
+  // Add a console message if the agent is off-map
   const isOnMap = agent.x >= mapMinX && agent.x <= mapMaxX &&
           agent.y >= mapMinY && agent.y <= mapMaxY;
   
@@ -285,43 +356,67 @@ function sendCommand(command) {
 }
 
 function toggleSimulation() {
+  if (!simulationStarted) {
+    addMessage('System', 'No simulation running');
+    return;
+  }
+  
   isRunning = !isRunning;
   const btn = document.getElementById('startBtn');
-  if (isRunning) {
-    btn.textContent = 'Pause Mission';
-    btn.className = 'btn-pause';
+  
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    if (isRunning) {
+      ws.send(JSON.stringify({ type: 'resume_simulation' }));
+      btn.textContent = 'Pause Mission';
+      btn.className = 'btn-pause';
+      addMessage('System', 'Resuming simulation...');
+    } else {
+      ws.send(JSON.stringify({ type: 'pause_simulation' }));
+      btn.textContent = 'Resume Mission';
+      btn.className = 'btn-start';
+      addMessage('System', 'Pausing simulation...');
+    }
   } else {
-    btn.textContent = 'Start Mission';
-    btn.className = 'btn-start';
+    addMessage('System', 'Not connected to server');
   }
 }
 
-function resetSimulation() {
+async function resetSimulation() {
+  if (simulationStarted && ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: 'stop_simulation' }));
+    addMessage('System', 'Stopping simulation...');
+  }
+
+  // Reset all simulation data
   agents = [];
   resources = [];
-  hazards = [];
   exploredCells = new Set();
-  mapCells = {}; // Clear map data on reset
+  mapCells = {};
   selectedAgent = null;
-  viewportX = 0; // Reset viewport to origin
+  viewportX = 0;
   viewportY = 0;
-  mapMinX = mapMinY = mapMaxX = mapMaxY = 0; // Reset bounds
-  
-  // Clear messages
-  const container = document.getElementById('messagesContainer');
-  container.innerHTML = '';
-  
+  mapMinX = mapMinY = mapMaxX = mapMaxY = 0;
+  simulationStarted = false;
+
+  // Reset UI buttons
+  document.getElementById('startSimBtn').style.display = 'inline-block';
+  document.getElementById('startBtn').style.display = 'none';
+  document.getElementById('configPanel').style.display = 'none';
+
+  // Clear messages safely
+  clearMessages();
+
   renderAgents();
   render();
   addMessage('System', 'Visualization reset');
 }
 
-// --- Core Rendering Logic (Unchanged) ---
+// --- Core Rendering Logic ---
 
 function render() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  // 1. Draw Terrain and Explored Cells (Background) - Optimized Loop
+  // 1. Draw Terrain and Explored Cells (Background)
   for (let vx = 0; vx < VIEWPORT_SIZE_CELLS; vx++) {
     for (let vy = 0; vy < VIEWPORT_SIZE_CELLS; vy++) {
       // Calculate World Coordinates based on Viewport Origin
@@ -365,8 +460,7 @@ function render() {
     }
   }
 
-
-  // 2. Draw Grid (Only for the viewport)
+  // 2. Draw Grid
   ctx.strokeStyle = '#374151';
   ctx.lineWidth = 0.5;
   for (let i = 0; i <= VIEWPORT_SIZE_CELLS; i++) {
@@ -382,8 +476,8 @@ function render() {
     ctx.stroke();
   }
 
-  // 3. Draw Hazards, Resources, and Agents (Foreground items)
-  [...hazards, ...resources, ...agents].forEach(item => {
+  // 3. Draw Agents
+  [...resources,...agents].forEach(item => {
     // Only draw if the item is within the viewport
     if (item.x >= viewportX && item.x < viewportX + VIEWPORT_SIZE_CELLS &&
       item.y >= viewportY && item.y < viewportY + VIEWPORT_SIZE_CELLS) {
@@ -392,15 +486,13 @@ function render() {
       const drawX = (item.x - viewportX) * CELL_SIZE_PX + CELL_SIZE_PX / 2;
       const drawY = (item.y - viewportY) * CELL_SIZE_PX + CELL_SIZE_PX / 2;
 
-      if (item.type === 'storm' || item.type === 'rock') {
-        // Hazards
-        ctx.fillStyle = item.type === 'storm' ? 'rgba(239, 68, 68, 0.3)' : 'rgba(245, 158, 11, 0.3)';
-        ctx.beginPath();
-        const radiusPx = (item.radius || 1) * CELL_SIZE_PX;
-        ctx.arc(drawX, drawY, radiusPx, 0, 2 * Math.PI);
-        ctx.fill();
+      const agent = item;
+      ctx.fillStyle = agent.color || '#ffffff';
+      ctx.beginPath();
+      
+      const shapeSize = CELL_SIZE_PX; 
 
-      } else if (item.discovered !== undefined) {
+      if (item.discovered !== undefined) {
         // Resources
         ctx.fillStyle = item.discovered ? 'rgba(59, 130, 246, 0.9)' : 'rgba(16, 185, 129, 0.3)';
         ctx.beginPath();
@@ -413,13 +505,6 @@ function render() {
           ctx.stroke();
         }
       } else {
-        // Agents
-        const agent = item;
-        ctx.fillStyle = agent.color || '#ffffff';
-        ctx.beginPath();
-        
-        const shapeSize = CELL_SIZE_PX; 
-
         if (agent.type === 'rover') {
           ctx.rect(drawX - shapeSize/2, drawY - shapeSize/2, shapeSize, shapeSize);
           ctx.fill();
@@ -450,20 +535,19 @@ function render() {
           ctx.arc(drawX, drawY, CELL_SIZE_PX * 0.3, 0, 2 * Math.PI);
           ctx.fill();
         }
-        
-        // Selection highlight
-        if (selectedAgent?.id === agent.id) {
-          ctx.strokeStyle = '#ffffff';
-          ctx.lineWidth = 2;
-          ctx.beginPath();
-          ctx.arc(drawX, drawY, CELL_SIZE_PX * 0.8, 0, 2 * Math.PI);
-          ctx.stroke();
-        }
+      }
+      
+      // Selection highlight
+      if (selectedAgent?.id === agent.id) {
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(drawX, drawY, CELL_SIZE_PX * 0.8, 0, 2 * Math.PI);
+        ctx.stroke();
       }
     }
   });
 }
-
 
 // --- Interaction Handlers (Click and Pan) ---
 function clampViewport(x, y) {
@@ -475,7 +559,7 @@ function clampViewport(x, y) {
   let newX = Math.max(mapMinX, Math.min(x, maxViewX));
   let newY = Math.max(mapMinY, Math.min(y, maxViewY));
   
-  // Handle edge case where map data hasn't been loaded yet (mapMinX/Y is huge/tiny)
+  // Handle edge case where map data hasn't been loaded yet
   if (mapMaxX === 0 && mapMinX === MAP_SIZE_CELLS) {
     newX = 0;
     newY = 0;
@@ -524,7 +608,7 @@ canvas.addEventListener('mousemove', function(e) {
   render();
 });
 
-// Canvas click handler (for agent selection, runs after mouseup)
+// Canvas click handler (for agent selection)
 canvas.addEventListener('click', function(e) {
   const rect = canvas.getBoundingClientRect();
   // Convert click coordinates to viewport cells, then to world cells
@@ -544,7 +628,7 @@ canvas.addEventListener('click', function(e) {
   }
 });
 
-// Simple panning using arrow keys (kept as an alternative)
+// Arrow key panning
 document.addEventListener('keydown', (e) => {
   if (mapMaxX === 0) return; // Don't pan if no data is loaded
   const step = 1; 

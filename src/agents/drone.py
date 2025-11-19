@@ -200,7 +200,7 @@ class Drone(VisualizationMixin, Agent):
             
             await drone.viz_send_message(f"Requesting mission bids for target {self.target_position}")
 
-            timeout = 8
+            timeout = 4
 
             start_time = asyncio.get_event_loop().time()
 

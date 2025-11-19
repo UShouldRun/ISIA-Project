@@ -3,8 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Planetary Exploration - SPADE Visualization</title>
+  <title>Planetary Exploration</title>
   <link rel="stylesheet" href="styles.css">
+  <link rel="icon" href="rocket.png" type="image/png">
 </head>
 <body>
   <div id="connection-status" class="connection-status status-disconnected">
@@ -19,16 +20,25 @@
         <div class="subtitle">Multi-Agent SPADE Simulation</div>
       </div>
       <div class="controls">
-        <button id="startBtn" class="btn-start" onclick="toggleSimulation()">Start Mission</button>
+        <button id="startSimBtn" class="btn-start" onclick="startSimulation()">Start Simulation</button>
+        <button id="startBtn" class="btn-start" onclick="toggleSimulation()" style="display: none;">Start Mission</button>
         <button id="resetBtn" class="btn-reset" onclick="resetSimulation()">Reset</button>
       </div>
+    </div>
+
+    <!-- Config File Input (hidden by default, shown when needed) -->
+    <div id="configPanel" class="config-panel" style="display: none;">
+      <label for="configFile">Configuration File:</label>
+      <input type="text" id="configFile" placeholder="e.g., config.json" value="config.json">
+      <button class="btn-start" onclick="confirmStartSimulation()">Confirm Start</button>
+      <button class="btn-pause" onclick="cancelStartSimulation()">Cancel</button>
     </div>
 
     <!-- Stats -->
     <div class="stats-grid">
       <div class="stat-card">
         <div>
-          <div class="stat-value" id="terrainMapped">0%</div>
+          <div class="stat-value" id="terrainMapped">0.0000%</div>
           <div class="stat-label">Terrain Mapped</div>
         </div>
       </div>
@@ -41,13 +51,13 @@
       <div class="stat-card">
         <div>
           <div class="stat-value" id="avgEnergy">100%</div>
-          <div class="stat-label">Avg Energy</div>
+          <div class="stat-label">Average Rover Energy</div>
         </div>
       </div>
       <div class="stat-card">
         <div>
-          <div class="stat-value" id="missionTime">0s</div>
-          <div class="stat-label">Mission Time</div>
+          <div class="stat-value" id="hazards">0</div>
+          <div class="stat-label">Hazards</div>
         </div>
       </div>
     </div>

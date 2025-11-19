@@ -294,9 +294,8 @@ class Rover(VisualizationMixin, Agent):
             visualizer.
             """
             rover = self.agent
-            msg = await self.receive(timeout=5)
+            msg = await self.receive(timeout=3)
             if not msg:
-                await asyncio.sleep(1)
                 return
 
             performative = msg.metadata.get("performative")
@@ -381,8 +380,6 @@ class Rover(VisualizationMixin, Agent):
                 rover.status = "returning"
                 rover.is_locked_by_bid = False
                 print(f"[{rover.name}] Received return path ({len(rover.path)} steps) to base.")
-
-            await asyncio.sleep(1)
 
     class MoveAlongPath(CyclicBehaviour):
         """

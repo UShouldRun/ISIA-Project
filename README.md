@@ -57,6 +57,7 @@ This will:
 ### 4. Stop and clean up
 
 ```bash
+./run.sh kill    # Kill the server and run ./run.shup to start again
 ./run.sh down    # Stop the container
 ./run.sh remove  # Remove the container
 ```
