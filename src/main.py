@@ -263,7 +263,7 @@ async def main():
     _ = await viz_server.start_server()
 
     print("[MAIN] Waiting for visualization client to connect...")
-    connected = await viz_server.wait_for_client(timeout=30)
+    connected = await viz_server.wait_for_client(timeout=30)  # 30 second timeout
     
     if not connected:
         print("[WARNING] Starting simulation without visualization client")
@@ -285,6 +285,93 @@ async def main():
     base_jids = {b["jid"]: f"{b['jid']}@{tag}" for b in base_configs}
     drone_jids = {d["jid"]: f"{d['jid']}@{tag}" for d in drone_configs}
     rover_jids = {r["jid"]: f"{r['jid']}@{tag}" for r in rover_configs}
+    
+    # --- CREATE AGENTS ---
+    agents_to_start = []
+    
+    # Create Bases
+    bases = {}
+    for base_config in base_configs:
+        base_jid = base_jids[base_config["jid"]]
+        base_name = base_config.get("name", base_config["jid"])
+        base_center = base_centers[base_name]
+        
+        # Find all rovers assigned to this base
+        rovers_for_this_base = [
+            rover_jids[r["jid"]] 
+            for r in rover_configs 
+            if r.get("base", base_configs[0].get("name") if base_configs else None) == base_name
+        ]
+        drones_for_this_base = [
+            drone_jids[d["jid"]]
+            for d in drone_configs
+        ]
+        
+        base = Base(
+            base_jid,
+            base_name,
+            base_center,
+            rovers_for_this_base,
+            drones_for_this_base,
+            radius = base_config.get("radius", 50),
+            viz_server=viz_server
+        )
+        bases[base_jid] = base
+        agents_to_start.append(base)
+        print(f"[INIT] Initialized Base '{base_name}' at {base_center} with {len(rovers_for_this_base)} rovers")
+    
+    # Create Drones
+    drones = {}
+    for i, (drone_config, drone_pos) in enumerate(zip(drone_configs, drone_positions)):
+        drone_jid = drone_jids[drone_config["jid"]]
+        drone_name = drone_config.get("name", drone_config["jid"])
+        
+        # Get known bases for this drone
+        known_base_names = drone_config.get("known_bases", [])
+        known_base_jids = [base_jids[b] for b in known_base_names if b in base_jids]
+        
+        drone = Drone(
+            drone_jid,
+            drone_name,
+            world,
+            world_map,
+            drone_pos,
+            known_bases=known_base_jids,
+            viz_server=viz_server
+        )
+        drones[drone_jid] = drone
+        agents_to_start.append(drone)
+        print(f"[INIT] Initialized Drone '{drone_name}' at {drone_pos} knowing {len(known_base_jids)} bases")
+    
+    # Create Rovers
+    rovers = {}
+    for i, (rover_config, rover_pos) in enumerate(zip(rover_configs, rover_positions)):
+        rover_jid = rover_jids[rover_config["jid"]]
+        rover_name = rover_config.get("name", rover_config["jid"])
+        
+        # Get assigned drone
+        assigned_drone_name = rover_config.get("assigned_drone")
+        assigned_drone_jid = drone_jids.get(assigned_drone_name) if assigned_drone_name else None
+        
+        # Get base
+        rover_base_name = rover_config.get("base")
+        if not rover_base_name and base_configs:
+            rover_base_name = base_configs[0].get("name", base_configs[0]["jid"])
+        rover_base_jid = base_jids.get(rover_base_name)
+        
+        rover = Rover(
+            rover_jid,
+            rover_name,
+            rover_pos,
+            world,
+            world_map,
+            base_jid=rover_base_jid,
+            base_radius=bases[base_jid].radius,
+            viz_server=viz_server
+        )
+        rovers[rover_jid] = rover
+        agents_to_start.append(rover)
+        print(f"[INIT] Initialized Rover '{rover_name}' at {rover_pos} (Base: {rover_base_name}, Drone: {assigned_drone_name})")
     
     # --- START AGENTS ---
     print(f"\n[MAIN] Starting {len(agents_to_start)} agents...")
