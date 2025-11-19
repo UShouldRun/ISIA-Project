@@ -16,9 +16,9 @@ services:
 
   spade_web:
     image: python:3.12-slim
-    working_dir: /app
+    working_dir: /app/public
     volumes:
-      - ./public:/app
+      - ./public:/app/public
     command: python -m http.server ${CLIENT_PORT}
     ports:
       - "${CLIENT_PORT}:${CLIENT_PORT}"

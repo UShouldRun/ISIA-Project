@@ -327,6 +327,7 @@ async def main():
     for i, (drone_config, drone_pos) in enumerate(zip(drone_configs, drone_positions)):
         drone_jid = drone_jids[drone_config["jid"]]
         drone_name = drone_config.get("name", drone_config["jid"])
+        drone_radius = drone_config.get("scan_radius", 20.0)
         
         # Get known bases for this drone
         known_base_names = drone_config.get("known_bases", [])
@@ -339,6 +340,7 @@ async def main():
             world_map,
             drone_pos,
             known_bases=known_base_jids,
+            scan_radius=drone_radius,
             viz_server=viz_server
         )
         drones[drone_jid] = drone

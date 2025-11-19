@@ -21,7 +21,8 @@
       "name": "drone1",
       "position": [50, 50],
       "known_bases": ["base1", "base2"],
-      "password": "drone1"
+      "password": "drone1",
+      "scan_radius": 50.0
     }
   ],
   "rovers": [

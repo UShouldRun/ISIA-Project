@@ -343,11 +343,6 @@ function render() {
           terrainColor = 'rgba(30, 41, 59, 0.6)';
         }
 
-        if (cell.dust_storm === true) {
-          console.log(cell.dust_storm)
-          terrainColor = 'rgba(239, 181, 73, 0.7)';
-        }
-
         ctx.fillStyle = terrainColor;
         ctx.fillRect(drawX, drawY, CELL_SIZE_PX, CELL_SIZE_PX);
 
@@ -359,7 +354,7 @@ function render() {
 
         // C. Draw Dust Storm Overlay (if active on this cell)
         if (cell.dust_storm) {
-          ctx.fillStyle = 'rgba(245, 158, 11, 0.4)';
+          ctx.fillStyle = 'rgba(239, 181, 73, 0.7)';
           ctx.fillRect(drawX, drawY, CELL_SIZE_PX, CELL_SIZE_PX);
         }
       } else {
@@ -434,6 +429,14 @@ function render() {
           ctx.lineTo(drawX - shapeSize/2, drawY + shapeSize/2);
           ctx.closePath();
           ctx.fill();
+
+          // Draw scan radius circle (outline only)
+          ctx.strokeStyle = agent.color || '#8b5cf6';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(drawX, drawY, (agent.radius || 5) * CELL_SIZE_PX, 0, 2 * Math.PI);
+          ctx.stroke();
+
         } else if (agent.type === 'base') {
           // Draw radius circle (outline only)
           ctx.strokeStyle = agent.color || '#8b5cf6';

@@ -10,7 +10,7 @@
       {
         "jid": "base1",
         "name": "base1",
-        "center": [50, 50],
+        "center": [90, 40],
         "radius": 0.7,
         "password": "base1"
       },
@@ -20,22 +20,39 @@
         "center": [10, 10],
         "radius": 0.7,
         "password": "base2"
+      },
+      {
+        "jid": "base3",
+        "name": "base3",
+        "center": [25, 80],
+        "radius": 0.7,
+        "password": "base3"
       }
     ],
     "drones": [
       {
         "jid": "drone1",
         "name": "drone1",
-        "position": [70, 70],
+        "position": [80, 30],
         "known_bases": ["base1"],
-        "password": "drone1"
+        "password": "drone1",
+        "scan_radius": 35.0
       },
       {
         "jid": "drone2",
         "name": "drone2",
         "position": [15, 15],
-        "known_bases": ["base1"],
-        "password": "drone2"
+        "known_bases": ["base2"],
+        "password": "drone2",
+        "scan_radius": 30.0
+      },
+      {
+        "jid": "drone3",
+        "name": "drone3",
+        "position": [30, 75],
+        "known_bases": ["base3"],
+        "password": "drone3",
+        "scan_radius": 30.0
       }
     ],
     "rovers": [
@@ -73,6 +90,34 @@
         "position": "random_in_base",
         "base": "base2",
         "password": "rover5"
+      },
+      {
+        "jid": "rover6",
+        "name": "rover6",
+        "position": "random_in_base",
+        "base": "base3",
+        "password": "rover6"
+      },
+      {
+        "jid": "rover6",
+        "name": "rover6",
+        "position": "random_in_base",
+        "base": "base3",
+        "password": "rover6"
+      },
+      {
+        "jid": "rover7",
+        "name": "rover7",
+        "position": "random_in_base",
+        "base": "base3",
+        "password": "rover7"
+      },
+      {
+        "jid": "rover8",
+        "name": "rover8",
+        "position": "random_in_base",
+        "base": "base3",
+        "password": "rover8"
       }
     ],
     "logging": {
@@ -81,4 +126,3 @@
       "spade_agent_level": "DEBUG"
     }
   }
-  

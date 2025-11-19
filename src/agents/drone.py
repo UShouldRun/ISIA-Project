@@ -45,7 +45,7 @@ class Drone(VisualizationMixin, Agent):
         position: Tuple[float, float],
         known_bases: List[str],
         height: float = 1.0,
-        scan_radius: float = 500.0,
+        scan_radius: float = 20.0,
         viz_server = None
     ) -> None:
         """
@@ -88,7 +88,8 @@ class Drone(VisualizationMixin, Agent):
                 agent_jid=jid,
                 position=position,
                 battery=100.0,
-                color="#00F000"
+                color="#00F000",
+                radius=scan_radius
             )
 
     class ScanTerrain(CyclicBehaviour):
@@ -106,6 +107,10 @@ class Drone(VisualizationMixin, Agent):
             """
             print(f"{GREEN}[{self.agent.name}] Starting terrain scanning...{RESET}")
             await self.agent.viz_send_message("Starting terrain scanning")
+
+        def in_scan_radius(self, scan_pos: Tuple[int, int]):
+            drone = self.agent
+            return ((drone.position[0] - scan_pos[0]) ** 2 + (drone.position[1] - scan_pos[1]) ** 2) <= drone.scan_radius ** 2
 
         def is_area_of_interest(self) -> bool:
             """
@@ -139,7 +144,7 @@ class Drone(VisualizationMixin, Agent):
 
             print(f"{GREEN}[{drone.name}] Scanning area: {scan_pos}{RESET}")
             
-            if self.is_area_of_interest():
+            if self.is_area_of_interest() and self.in_scan_radius(scan_pos):
                 drone.areas_of_interest.append(scan_pos)
                 print(f"{GREEN}[{drone.name}] Area of interest detected at {scan_pos}{RESET}")
                 await drone.viz_send_message(f"Area of interest detected at {scan_pos}")

@@ -28,14 +28,16 @@
         "name": "drone1",
         "position": [70, 70],
         "known_bases": ["base1"],
-        "password": "drone1"
+        "password": "drone1",
+        "scan_radius": 40.0
       },
       {
         "jid": "drone2",
         "name": "drone2",
         "position": [15, 15],
         "known_bases": ["base2"],
-        "password": "drone2"
+        "password": "drone2",
+        "scan_radius": 40.0
       }
     ],
     "rovers": [

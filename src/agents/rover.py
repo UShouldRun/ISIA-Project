@@ -423,33 +423,31 @@ class Rover(VisualizationMixin, Agent):
             rover = self.agent
 
             if rover.goal == None:
-                print(f"{cyan}[{rover.name}] no goal set, cancelling movealongpath{reset}")
+                print(f"{CYAN}[{rover.name}] No goal set, cancelling MoveAlongPath{RESET}")
                 self.kill()
                 await asyncio.sleep(2)
                 return
 
             if rover.status not in ["moving", "returning"]:
-                print(f"{cyan}[{rover.name}] doing another task, cancelling movealongpath{reset}")
+                print(f"{CYAN}[{rover.name}] Doing another task, cancelling MoveAlongPath{RESET}")
                 self.kill()
                 await asyncio.sleep(2)
                 return
 
             if not rover.path:
-                print(f"{cyan}[{rover.name}] could not compute path to goal {rover.goal}{reset}")
+                print(f"{CYAN}[{rover.name}] could not compute path to goal {rover.goal}{RESET}")
                 self.kill()
                 await asyncio.sleep(2)
                 return
 
             s_path = len(rover.path)
 
-            if rover.curr < 0:
-                rover.curr = 0
             if rover.curr >= s_path:
                 rover.curr = s_path - 1            
 
             next_is_goal = (
-                (rover.status == "returning" and rover.curr == 0) or
-                (rover.status == "moving" and rover.curr == s_path - 1)
+                (rover.status == "returning" or rover.status == "moving") and
+                rover.curr == s_path - 1
             )
 
             next_step = rover.path[rover.curr] if not next_is_goal else rover.goal
@@ -471,9 +469,12 @@ class Rover(VisualizationMixin, Agent):
             sleep_time = step_size / (SIMULATION_SPEED * ROVER_SPEED_UNIT_PER_SEC)
             await asyncio.sleep(max(0.001, sleep_time))
 
-            collisions = rover.world.collides(rover.jid, new_pos)
+            collisions = list(filter(
+                lambda collision: not "drone" in collision.id and collision.id != rover.base_jid,
+                rover.world.collides(rover.jid, new_pos)
+            ))
             s_collisions = len(collisions)
-            if s_collisions > 0 and not (s_collisions == 1 and collisions[0].id == rover.base_jid):
+            if s_collisions > 0:
                 print(f"{CYAN}[{rover.name}] collision detected near {new_pos}, collisions: {collisions}{RESET}")
                 await rover.viz_send_message(f"collision detected! attempting to avoid obstacle")
 
@@ -493,7 +494,7 @@ class Rover(VisualizationMixin, Agent):
                 arrived_next_step = distance_after_move <= COLLISION_RADIUS
                 if arrived_next_step:
                     rover.position = next_step if not next_is_goal else rover.goal
-                    rover.curr += 1 if rover.status == "moving" else -1
+                    rover.curr += 1
                     
                 await rover.viz_update_position(rover.position)
                 await rover.viz_update_battery(100 * rover.energy / MAX_ROVER_CHARGE)
@@ -502,10 +503,10 @@ class Rover(VisualizationMixin, Agent):
                 print(f", energy: {(100 * rover.energy / MAX_ROVER_CHARGE):.1f}%", end = '')
                 print(f", distance left: {rover.calculate_distance(rover.position, rover.goal)}{RESET}")
 
-                if not arrived_next_step:
+                if not arrived_next_step or rover.curr < s_path - 1:
                     return
 
-                if rover.status == "moving" and rover.curr == s_path - 1:
+                if rover.status == "moving":
                     rover.status = "arrived"
 
                     print(f"{CYAN}[{rover.name}] arrived at mission goal {rover.goal}{RESET}")
@@ -524,9 +525,16 @@ class Rover(VisualizationMixin, Agent):
                     self.kill()
                     rover.goal = rover.base_position
                     rover.status = "returning"
+                    old_path = rover.path.reverse()
+
+                    returning_status = await rover.find_path()
+                    if returning_status != "viable":
+                        rover.path = old_path
+                        rover.goal = rover.base_position
+
                     rover.add_behaviour(rover.MoveAlongPath())
 
-                elif rover.status == "returning" and rover.curr == 0:
+                elif rover.status == "returning":
                     rover.status = "idle"
                     rover.path = []
                     rover.goal = None
