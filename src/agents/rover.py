@@ -465,6 +465,11 @@ class Rover(VisualizationMixin, Agent):
             new_pos = (rover.position[0] + dx * step_size, rover.position[1] + dy * step_size)
 
             rover.energy -= step_size * ENERGY_PER_DISTANCE_UNIT
+
+            cell = rover.map.get_cell(int(new_pos[0]), int(new_pos[1]))
+            if cell and cell.dust_storm:
+                rover.energy -= STORM_COST
+
             if rover.energy < 0:
                 rover.energy = 0
 
