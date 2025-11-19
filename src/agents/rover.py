@@ -16,6 +16,28 @@ from settings import *
 from agents.visualizator import VisualizationBehaviour, VisualizationMixin
 
 class Rover(VisualizationMixin, Agent):
+    """
+    Rover agent responsible for pathfinding, movement, bidding for missions,
+    and resource analysis on a simulated planetary surface.
+
+    Attributes:
+        position (Tuple[float, float]): Current rover position.
+        world (World): Simulation world containing obstacles and agents.
+        map (Map): Navigation map used for pathfinding.
+        base_jid (str): JID of the base station.
+        base_position (Tuple[float, float]): Initial rover position (base).
+        energy (float): Current battery level.
+        path (List[Tuple[float, float]]): Computed movement path.
+        goal (Optional[Tuple[float, float]]): Mission destination.
+        status (str): Current rover state.
+        is_locked_by_bid (bool): Whether rover is locked due to bidding.
+        is_on_base (bool): Whether rover is currently on base.
+        move_step (float): Maximum distance rover can move per tick.
+        obstacle_radius (float): Collision radius for obstacles.
+        resource_probs (Dict[str, float]): Probabilities of discovering resources.
+        viz_server: Visualization server reference.
+    """
+
     def __init__(
         self,
         jid: str,
@@ -29,6 +51,21 @@ class Rover(VisualizationMixin, Agent):
         obstacle_radius: float = 1.0,
         viz_server = None
     ) -> None:
+        """
+        Initialize a Rover agent.
+
+        Args:
+            jid (str): Agent JID.
+            password (str): Agent password.
+            position (Tuple[float, float]): Starting position.
+            world (World): Simulation world.
+            map (Map): Navigation map.
+            base_jid (str): Base station JID.
+            base_radius (float): Base collision radius.
+            move_step (float): Movement step size.
+            obstacle_radius (float): Obstacle collision radius.
+            viz_server: Optional visualization server.
+        """
         super().__init__(jid, password)
         self.position = position
         self.world = world
@@ -36,7 +73,6 @@ class Rover(VisualizationMixin, Agent):
         self.base_jid = base_jid
         self.base_position = position
 
-        # TODO: IMPLEMENT ENERGY CONSUMPTION
         self.energy = MAX_ROVER_CHARGE
 
         self.curr = 0
@@ -50,11 +86,10 @@ class Rover(VisualizationMixin, Agent):
         self.move_step = move_step
         self.obstacle_radius = obstacle_radius
 
-        # Resource detection probabilities
         self.resource_probs = {
-            "iron": 0.3,        # 30% chance
-            "silicon": 0.2,     # 20% chance
-            "water_ice": 0.1,   # 10% chance
+            "iron": 0.3,
+            "silicon": 0.2,
+            "water_ice": 0.1,
         }
 
         self.viz_server = viz_server
@@ -70,13 +105,30 @@ class Rover(VisualizationMixin, Agent):
 
     # -------------------------------------------------------------------------
     # UTILITIES
-    # ------------------------------------------------------------------------- 
+    # -------------------------------------------------------------------------
     def get_dpos(self, curr: Tuple[float, float], next: Tuple[float, float]) -> Tuple[int, int]:
-        """Compute one-step delta toward goal."""
+        """
+        Compute the directional delta between two points.
+
+        Args:
+            curr (Tuple[float, float]): Current position.
+            next (Tuple[float, float]): Target position.
+
+        Returns:
+            Tuple[int, int]: Delta vector.
+        """
         return (next[0] - curr[0], next[1] - curr[1])
 
     async def try_go_around(self, goal: Tuple[float, float]) -> Optional[Tuple[float, float]]:
-        """Try simple local avoidance: random offset around the obstacle."""
+        """
+        Attempt simple local obstacle avoidance using random offsets.
+
+        Args:
+            goal (Tuple[float, float]): Target waypoint.
+
+        Returns:
+            Optional[Tuple[float, float]]: New temporary position or None.
+        """
         for _ in range(5):
             offset_x = random.uniform(-0.5 * ROVER_SPEED_UNIT_PER_SEC, 0.5 * ROVER_SPEED_UNIT_PER_SEC)
             offset_y = random.uniform(-0.5 * ROVER_SPEED_UNIT_PER_SEC, 0.5 * ROVER_SPEED_UNIT_PER_SEC)
@@ -87,6 +139,12 @@ class Rover(VisualizationMixin, Agent):
         return None
 
     async def find_path(self) -> str:
+        """
+        Compute an A* path to the current rover goal.
+
+        Returns:
+            str: Status code indicating result ("viable", "no_path", "not_enough_energy").
+        """
         rover = self
 
         rover.path = AStar.run(rover.map, rover.position, rover.goal)
@@ -113,42 +171,57 @@ class Rover(VisualizationMixin, Agent):
         return "viable"
 
     def calculate_distance(self, pos1: Tuple[float, float], pos2: Tuple[float, float]) -> float:
+        """
+        Compute Euclidean distance between two points.
+
+        Args:
+            pos1 (Tuple[float, float]): First point.
+            pos2 (Tuple[float, float]): Second point.
+
+        Returns:
+            float: Euclidean distance.
+        """
         return sqrt((pos1[0] - pos2[0]) ** 2 + (pos1[1] - pos2[1]) ** 2)
 
     def calculate_pathfinding_cost(self, start_pos: Tuple[float, float], target_pos: Tuple[float, float]) -> float:
-            """
-            Slightly randomized Euclidean distance.
-            """
-            euclidean_dist = self.calculate_distance(start_pos, target_pos)
-            # Simulate complexity by making the pathfinding distance 0-10% longer than straight-line
-            return euclidean_dist * random.uniform(1.0, 1.1)
+        """
+        Estimate pathfinding cost using randomized Euclidean distance.
+
+        Args:
+            start_pos (Tuple[float, float]): Starting point.
+            target_pos (Tuple[float, float]): Target point.
+
+        Returns:
+            float: Cost estimate.
+        """
+        euclidean_dist = self.calculate_distance(start_pos, target_pos)
+        return euclidean_dist * random.uniform(1.0, 1.1)
 
     def compute_mission_time(self, target_pos: Tuple[float, float]) -> float:
+        """
+        Compute estimated total mission time for bidding.
+
+        Args:
+            target_pos (Tuple[float, float]): Mission target.
+
+        Returns:
+            float: Estimated mission time in seconds.
+        """
         current_energy = self.energy
-        
-        # 1. Calculate an approximation of the distance that the rover will have to go (2-way trip: Base -> Target -> Base)
-        # We use the base position as the starting point.
-        # We use eucledian distance for the approximation
 
         dist_to_target = self.calculate_pathfinding_cost(self.position, target_pos)
         dist_to_base_after = self.calculate_pathfinding_cost(target_pos, self.position)
         total_distance = dist_to_target + dist_to_base_after
 
-        # 2. Calculate the energy required
         energy_required = total_distance * ENERGY_PER_DISTANCE_UNIT
-        
-        # 3. Calculate Time Needed (The Bid Cost)
-        time_to_charge = 0.0
 
+        time_to_charge = 0.0
         if current_energy < energy_required:
-            # Calculate time needed to charge the difference
             energy_needed_to_charge = energy_required - current_energy
             time_to_charge = energy_needed_to_charge / CHARGE_RATE_ENERGY_PER_SEC
-            
-        # Time to execute the mission (travel time)
+
         time_to_travel = total_distance / ROVER_SPEED_UNIT_PER_SEC
-        
-        # The total mission time (cost) includes charge time and travel time
+
         mission_time = time_to_charge + time_to_travel
 
         return mission_time
@@ -157,7 +230,19 @@ class Rover(VisualizationMixin, Agent):
     # BEHAVIOURS
     # -------------------------------------------------------------------------
     class Charge(CyclicBehaviour):
+        """
+        Behaviour handling rover battery charging when on base.
+        """
         async def run(self):
+            """
+            Periodically charge the rover's battery while it is on base and
+            publish status updates to the visualizer.
+
+            This method runs as a cyclic behaviour and increments the rover's
+            energy by CHARGE_RATE_ENERGY_PER_SEC every second until the
+            battery reaches MAX_ROVER_CHARGE. It also prints textual status
+            messages at several charge thresholds.
+            """
             rover = self.agent
 
             if rover.is_on_base:
@@ -186,7 +271,28 @@ class Rover(VisualizationMixin, Agent):
             await asyncio.sleep(1)
     
     class ReceiveMessages(CyclicBehaviour):
+        """
+        Behaviour responsible for receiving and handling incoming XMPP messages.
+
+        The behaviour processes bid requests from the base, sends proposals or
+        refusals, accepts/rejects mission confirmations, and updates rover
+        state based on incoming informs. It communicates with the base using
+        structured Message objects with metadata and a stringified body.
+        """
         async def run(self):
+            """
+            Wait for messages with a short timeout and handle several
+            performatives:
+
+            - cfp / rover_bid_cfp: evaluate mission and send a proposal or refuse
+            - accept_proposal: start moving toward the accepted target
+            - reject_proposal: unlock and remain idle
+            - inform (return_path_to_base): receive a return path and update state
+
+            The method uses eval() to parse message bodies that were serialized
+            with str(dict). It also forwards human-readable updates to the
+            visualizer.
+            """
             rover = self.agent
             msg = await self.receive(timeout=5)
             if not msg:
@@ -279,7 +385,22 @@ class Rover(VisualizationMixin, Agent):
             await asyncio.sleep(1)
 
     class MoveAlongPath(CyclicBehaviour):
+        """
+        Behaviour that moves the rover along a previously computed path.
+
+        Responsibilities:
+        - Notify the base when leaving
+        - Step the rover position along the path according to move_step and
+          simulation speed
+        - Detect collisions and attempt local avoidance
+        - Trigger mission-complete events and start analysis behaviour
+        """
         async def on_start(self) -> None:
+            """
+            Called when the behaviour is added to the agent. If the rover is in
+            the moving state it sends an inform message to the base announcing
+            departure.
+            """
             rover = self.agent 
 
             if rover.status == "moving":
@@ -292,6 +413,13 @@ class Rover(VisualizationMixin, Agent):
                 await self.send(msg)
 
         async def run(self):
+            """
+            Execute a single movement step along the rover's path. The method
+            performs checks for valid goal/state/path, computes the next
+            position, updates energy, handles collisions, and triggers
+            subsequent behaviours when the rover arrives at its destination or
+            returns to base.
+            """
             rover = self.agent
 
             if rover.goal == None:
@@ -421,7 +549,17 @@ class Rover(VisualizationMixin, Agent):
     # NEW BEHAVIOUR — ANALYZE SOIL
     # -------------------------------------------------------------------------
     class AnalyzeSoil(CyclicBehaviour):
+        """
+        Behaviour that simulates a one-time soil/resource analysis at the rover's
+        current location. It samples from defined probabilities and informs the
+        base if resources are discovered.
+        """
         async def run(self):
+            """
+            Execute resource sampling based on resource_probs. Sends an inform
+            message to the base containing any discovered resources and then
+            terminates the behaviour.
+            """
             rover = self.agent
             found_resources = []
 
@@ -449,6 +587,12 @@ class Rover(VisualizationMixin, Agent):
     # SETUP
     # -------------------------------------------------------------------------
     async def setup(self):
+        """
+        Agent setup method that registers initial behaviours and initializes
+        visualization if available.
+
+        This method is called by the SPADE framework when the agent starts.
+        """
         print(f"{CYAN}Initializing [{self.name}] rover.{RESET}")
         self.add_behaviour(self.ReceiveMessages())
         self.add_behaviour(self.Charge())

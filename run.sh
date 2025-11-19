@@ -49,8 +49,25 @@ case "$1" in
     virtualenv space_venv --python=python3.12
     source space_venv/bin/activate
     ;;
+  docs)
+    echo "Generating HTML docs inside the container..."
+    docker_cmd exec -w /app -it "$CONTAINER_NAME" bash -c "PYTHONPATH=/app/src pdoc src -o /app/docs"
+    echo "Copying docs to local directory..."
+    docker_cmd cp "$CONTAINER_NAME":/app/docs/. ./docs
+    echo "\033[32mDocs copied to ./docs\033[0m"
+    ;;
+  docs-open)
+    if command -v xdg-open >/dev/null 2>&1; then
+      xdg-open ./docs/index.html
+    elif command -v open >/dev/null 2>&1; then
+      open ./docs/index.html
+    else
+      echo "Open ./docs/index.html manually in your browser."
+    fi
+    ;;
   *)
-    echo "Usage: $0 {build|up|down}"
+    echo "Usage: $0 {build|up|down|sh|virtualenv|docs|docs-open}"
     exit 1
     ;;
 esac
+

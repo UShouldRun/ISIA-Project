@@ -16,7 +16,12 @@ from agents.visualizator import VisualizationServer
 from settings import *
 
 def setup_logging(config: Dict[str, Any]):
-    """Configure logging based on config file."""
+    """
+    Configure logging based on the configuration dictionary.
+
+    Args:
+        config (Dict[str, Any]): Configuration dictionary containing logging settings.
+    """
     log_config = config.get("logging", {})
     
     base_level = log_config.get("base_level", "INFO")
@@ -28,8 +33,20 @@ def setup_logging(config: Dict[str, Any]):
     agent_level = log_config.get("spade_agent_level", "DEBUG")
     logging.getLogger("spade.agent").setLevel(getattr(logging, agent_level))
 
+
 def load_config(config_path: str) -> Dict[str, Any]:
-    """Load and parse the JSON configuration file."""
+    """
+    Load and parse the JSON configuration file.
+
+    Args:
+        config_path (str): Path to the JSON configuration file.
+
+    Returns:
+        Dict[str, Any]: Parsed configuration dictionary.
+
+    Raises:
+        SystemExit: If the file is not found or JSON is invalid.
+    """
     try:
         with open(config_path, 'r') as f:
             config = json.load(f)
@@ -42,8 +59,20 @@ def load_config(config_path: str) -> Dict[str, Any]:
         print(f"[ERROR] Invalid JSON in configuration file: {e}")
         sys.exit(1)
 
+
 def random_pos_in_base(world: World, base_name: str, base_centers: Dict[str, Tuple[float, float]], base_radii: Dict[str, float]):
-    """Generate a random position within the specified base radius, ensuring no collisions."""
+    """
+    Generate a random collision-free position within a specified base radius.
+
+    Args:
+        world (World): The world object containing all existing objects.
+        base_name (str): Name of the base to generate the position within.
+        base_centers (Dict[str, Tuple[float, float]]): Dictionary mapping base names to their centers.
+        base_radii (Dict[str, float]): Dictionary mapping base names to their radii.
+
+    Returns:
+        Tuple[float, float]: Random collision-free coordinates within the base.
+    """
     if base_name not in base_centers:
         print(f"[WARNING] Base '{base_name}' not found, using default position")
         return (100, 100)
@@ -57,12 +86,28 @@ def random_pos_in_base(world: World, base_name: str, base_centers: Dict[str, Tup
         y = random.uniform(base_center[1] - 0.15 * base_radius, base_center[1] + 0.15 * base_radius)
         if all(((x - o.pos[0]) ** 2 + (y - o.pos[1]) ** 2) ** 0.5 > COLLISION_RADIUS for o in world.objects):
             return (x, y)
-    # Fallback if collision-free position not found
+    
     print("[WARNING] Could not find collision-free position, using fallback")
     return (base_center[0], base_center[1])
 
+
 def generate_world(config: Dict[str, Any], tag: str, viz_server) -> Tuple[World, Map, Dict[str, Tuple[float, float]], List[Tuple[float, float]]]:
-    """Generate the world based on configuration."""
+    """
+    Generate the world environment, map, and initial positions of rovers and drones.
+
+    Args:
+        config (Dict[str, Any]): Simulation configuration.
+        tag (str): Tag used to construct agent JIDs.
+        viz_server: Visualization server instance to update the map.
+
+    Returns:
+        Tuple[World, Map, Dict[str, Tuple[float, float]], List[Tuple[float, float]], List[Tuple[float, float]]]:
+        - World object containing all agents and objects.
+        - Map object representing terrain.
+        - Dictionary of base centers by name.
+        - List of rover positions.
+        - List of drone positions.
+    """
     world_config = config.get("world", {})
     base_configs = config.get("bases", [])
     rover_configs = config.get("rovers", [])
@@ -71,10 +116,8 @@ def generate_world(config: Dict[str, Any], tag: str, viz_server) -> Tuple[World,
     map_limit = tuple(world_config.get("map_limit", [100, 100]))
     
     world_map = Map(map_limit)
-
     world = World([])
     
-    # Dictionary to store base centers by base name
     base_centers = {}
     base_radii = {}
     
@@ -86,14 +129,13 @@ def generate_world(config: Dict[str, Any], tag: str, viz_server) -> Tuple[World,
         
         base_centers[base_name] = base_center
         base_radii[base_name] = base_radius
-        world.objects.append(WorldObject(f"{base_config["jid"]}@{tag}", base_center))
+        world.objects.append(WorldObject(f"{base_config['jid']}@{tag}", base_center))
         
     # --- Process rover positions ---
     rover_positions = []
     for rover_config in rover_configs:
         pos = rover_config.get("position", "random_in_base")
         if pos == "random_in_base":
-            # Get the base this rover belongs to
             rover_base = rover_config.get("base")
             if not rover_base and base_configs:
                 rover_base = base_configs[0].get("name", base_configs[0]["jid"])
@@ -105,7 +147,7 @@ def generate_world(config: Dict[str, Any], tag: str, viz_server) -> Tuple[World,
     # --- Register rover world objects ---
     for i, (rover_config, pos) in enumerate(zip(rover_configs, rover_positions), start=1):
         rover_name = rover_config.get("name", f"rover{i}")
-        world.objects.append(WorldObject(f"{rover_config["jid"]}@{tag}", pos))
+        world.objects.append(WorldObject(f"{rover_config['jid']}@{tag}", pos))
     
     # --- Process drone positions ---
     drone_positions = []
@@ -113,18 +155,28 @@ def generate_world(config: Dict[str, Any], tag: str, viz_server) -> Tuple[World,
         pos = tuple(drone_config.get("position", [500, 500]))
         drone_positions.append(pos)
         drone_name = drone_config.get("name", drone_config["jid"])
-        world.objects.append(WorldObject(f"{drone_config["jid"]}@{tag}", pos))
+        world.objects.append(WorldObject(f"{drone_config['jid']}@{tag}", pos))
     
     return world, world_map, base_centers, rover_positions, drone_positions
 
+
 async def simulate_hazards(world_map: Map, viz_server: Any, interval: int = 10):
     """
-    Simulates dust storms and updates the map accordingly, sending updates to viz.
+    Continuously simulate dust storms in the environment and update the visualization.
+
+    Args:
+        world_map (Map): The map object representing terrain.
+        viz_server (Any): Visualization server to push updates.
+        interval (int, optional): Time in seconds between hazard checks. Defaults to 10.
     """
     async def clear_storm(world_map: Map):
-        """Resets the storm flag on all cells and returns True if any storm was cleared."""
-        logging.info("[HAZARD] clearing for new storm...")
+        """
+        Clears any active dust storms on the map and sends updates to visualization.
 
+        Args:
+            world_map (Map): The map object.
+        """
+        logging.info("[HAZARD] clearing for new storm...")
         for i in range(world_map.columns):
             for j in range(world_map.rows):
                 cell = world_map.get_cell(i, j)
@@ -138,8 +190,7 @@ async def simulate_hazards(world_map: Map, viz_server: Any, interval: int = 10):
         for x in range(max_viz_x):
             for y in range(max_viz_y):
                 cell = world_map.grid[x][y]
-                cell_dict = cell.to_dict()
-                flat_map.append(cell_dict)
+                flat_map.append(cell.to_dict())
                 
         await viz_server.send_map_updates(flat_map)
 
@@ -148,13 +199,10 @@ async def simulate_hazards(world_map: Map, viz_server: Any, interval: int = 10):
             await asyncio.sleep(interval)
         except asyncio.CancelledError:
             logging.info("[HAZARD] FAILEEEEEEEEEEEED...")
-            
-            # Handle cancellation during sleep for clean shutdown
-            await clear_storm(world_map) # Clear any active storms before exit
+            await clear_storm(world_map)
             raise
         
         logging.info("[HAZARD] Checking for new storm...")
-
         await clear_storm(world_map)
         logging.info("[HAZARD] Previous storm subsided. Map cells reset.")
         
@@ -169,11 +217,8 @@ async def simulate_hazards(world_map: Map, viz_server: Any, interval: int = 10):
                 for j in range(world_map.rows):
                     cell = world_map.get_cell(i, j)
                     dist = ((cell.x - center_x) ** 2 + (cell.y - center_y) ** 2) ** 0.5
-                    
                     if dist < radius:
                         world_map.make_dust_cell(i,j)
-
-                    scale_factor = world_map.columns / 100 
 
             flat_map = [] 
             max_viz_x = min(world_map.columns, 100)
@@ -182,17 +227,26 @@ async def simulate_hazards(world_map: Map, viz_server: Any, interval: int = 10):
             for x in range(max_viz_x):
                 for y in range(max_viz_y):
                     cell = world_map.grid[x][y]
-                    cell_dict = cell.to_dict()
-                    flat_map.append(cell_dict)
+                    flat_map.append(cell.to_dict())
 
-            print(f"Any cell with dust? {any(cell["dust_storm"] for cell in flat_map)}")
+            print(f"Any cell with dust? {any(cell['dust_storm'] for cell in flat_map)}")
             await viz_server.send_map_updates(flat_map)
             logging.warning(f"[HAZARD] Map updated.")
         
         else:
             logging.info("[HAZARD] All clear. No new storm detected.")
 
+
 async def main():
+    """
+    Main entry point for the multi-agent system simulation.
+    
+    - Loads configuration.
+    - Sets up logging.
+    - Initializes the world, map, bases, drones, and rovers.
+    - Starts visualization server.
+    - Runs the simulation loop with hazard updates.
+    """
     # --- LOAD CONFIGURATION ---
     if len(sys.argv) < 2:
         print("[ERROR] Usage: python main.py <config_file.json>")
@@ -209,7 +263,7 @@ async def main():
     _ = await viz_server.start_server()
 
     print("[MAIN] Waiting for visualization client to connect...")
-    connected = await viz_server.wait_for_client(timeout=30)  # 30 second timeout
+    connected = await viz_server.wait_for_client(timeout=30)
     
     if not connected:
         print("[WARNING] Starting simulation without visualization client")
@@ -231,93 +285,6 @@ async def main():
     base_jids = {b["jid"]: f"{b['jid']}@{tag}" for b in base_configs}
     drone_jids = {d["jid"]: f"{d['jid']}@{tag}" for d in drone_configs}
     rover_jids = {r["jid"]: f"{r['jid']}@{tag}" for r in rover_configs}
-    
-    # --- CREATE AGENTS ---
-    agents_to_start = []
-    
-    # Create Bases
-    bases = {}
-    for base_config in base_configs:
-        base_jid = base_jids[base_config["jid"]]
-        base_name = base_config.get("name", base_config["jid"])
-        base_center = base_centers[base_name]
-        
-        # Find all rovers assigned to this base
-        rovers_for_this_base = [
-            rover_jids[r["jid"]] 
-            for r in rover_configs 
-            if r.get("base", base_configs[0].get("name") if base_configs else None) == base_name
-        ]
-        drones_for_this_base = [
-            drone_jids[d["jid"]]
-            for d in drone_configs
-        ]
-        
-        base = Base(
-            base_jid,
-            base_name,
-            base_center,
-            rovers_for_this_base,
-            drones_for_this_base,
-            radius = base_config.get("radius", 50),
-            viz_server=viz_server
-        )
-        bases[base_jid] = base
-        agents_to_start.append(base)
-        print(f"[INIT] Initialized Base '{base_name}' at {base_center} with {len(rovers_for_this_base)} rovers")
-    
-    # Create Drones
-    drones = {}
-    for i, (drone_config, drone_pos) in enumerate(zip(drone_configs, drone_positions)):
-        drone_jid = drone_jids[drone_config["jid"]]
-        drone_name = drone_config.get("name", drone_config["jid"])
-        
-        # Get known bases for this drone
-        known_base_names = drone_config.get("known_bases", [])
-        known_base_jids = [base_jids[b] for b in known_base_names if b in base_jids]
-        
-        drone = Drone(
-            drone_jid,
-            drone_name,
-            world,
-            world_map,
-            drone_pos,
-            known_bases=known_base_jids,
-            viz_server=viz_server
-        )
-        drones[drone_jid] = drone
-        agents_to_start.append(drone)
-        print(f"[INIT] Initialized Drone '{drone_name}' at {drone_pos} knowing {len(known_base_jids)} bases")
-    
-    # Create Rovers
-    rovers = {}
-    for i, (rover_config, rover_pos) in enumerate(zip(rover_configs, rover_positions)):
-        rover_jid = rover_jids[rover_config["jid"]]
-        rover_name = rover_config.get("name", rover_config["jid"])
-        
-        # Get assigned drone
-        assigned_drone_name = rover_config.get("assigned_drone")
-        assigned_drone_jid = drone_jids.get(assigned_drone_name) if assigned_drone_name else None
-        
-        # Get base
-        rover_base_name = rover_config.get("base")
-        if not rover_base_name and base_configs:
-            rover_base_name = base_configs[0].get("name", base_configs[0]["jid"])
-        rover_base_jid = base_jids.get(rover_base_name)
-        
-        rover = Rover(
-            rover_jid,
-            rover_name,
-            rover_pos,
-            world,
-            world_map,
-            base_jid=rover_base_jid,
-            base_radius=bases[base_jid].radius,
-            viz_server=viz_server
-        )
-        rovers[rover_jid] = rover
-        agents_to_start.append(rover)
-        print(f"[INIT] Initialized Rover '{rover_name}' at {rover_pos} (Base: {rover_base_name}, Drone: {assigned_drone_name})")
     
     # --- START AGENTS ---
     print(f"\n[MAIN] Starting {len(agents_to_start)} agents...")
@@ -348,5 +315,8 @@ async def main():
     print("[MAIN] All agents stopped.")
 
 if __name__ == "__main__":
+    """
+    Run the multi-agent system simulation using SPADE.
+    """
     print(f"[MAIN] Multi-Agent System Simulation")
     spade.run(main())

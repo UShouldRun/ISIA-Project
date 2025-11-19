@@ -11,26 +11,40 @@ from spade.behaviour import CyclicBehaviour
 
 from world.map import Map
 
-# WebSocket Server for Visualization
 class VisualizationServer:
+    """
+    WebSocket server responsible for streaming map data, agent updates,
+    logs, and environmental events to the visualization frontend.
+
+    This server manages connected WebSocket clients, broadcasts updates,
+    and exposes a command channel for frontend-to-agent communication.
+    """
     def __init__(self):
+        """Initialize the WebSocket app, routes, state containers, and sync events."""
         self.app = web.Application()
         self.clients = set()
-
-        # WebSocket route
         self.app.router.add_get('/ws', self.websocket_handler)
-        self.client_connected = asyncio.Event()  # Event to signal connection
+        self.client_connected = asyncio.Event()
         self.map_data = []
 
     async def websocket_handler(self, request):
+        """
+        Handle incoming WebSocket connections, process messages, and
+        automatically send the full map when a client connects.
+
+        Args:
+            request: aiohttp request instance for the WS upgrade.
+
+        Returns:
+            WebSocketResponse: active WebSocket channel.
+        """
         ws = web.WebSocketResponse()
         await ws.prepare(request)
 
         self.clients.add(ws)
-        self.client_connected.set()  # Signal that client is connected
-        
+        self.client_connected.set()
         print(f"Client connected. Total clients: {len(self.clients)}")
-        
+
         await self.send_full_map(ws)
 
         try:
@@ -44,27 +58,44 @@ class VisualizationServer:
             self.clients.discard(ws)
             print(f"Client disconnected. Total clients: {len(self.clients)}")
             self.client_connected.clear()
-        
         return ws
-    
+
     async def handle_command(self, data: str):
-        """Handle commands from the visualization interface"""
+        """
+        Process incoming commands from the visualization interface.
+
+        Args:
+            data (str): Parsed JSON payload sent by the frontend.
+        """
         print(f"Received command: {data}")
-        # You can forward commands to specific agents here
-        # This would integrate with your SPADE agent system
-        
+
     async def broadcast(self, message: str):
+        """
+        Broadcast a JSON-serializable message to all connected clients.
+
+        Args:
+            message (str): The JSON message to send.
+        """
         if not self.clients:
-            print(f"No Client found")
+            print("No Client found")
             return
 
-        """Send message to all connected clients"""
         await asyncio.gather(
             *[client.send_json(message) for client in self.clients],
             return_exceptions=True
         )
-    
+
     async def start_server(self, host: str = '0.0.0.0', port: int = 8080):
+        """
+        Start the aiohttp WebSocket server.
+
+        Args:
+            host (str): Host to bind.
+            port (int): Port to bind.
+
+        Returns:
+            AppRunner: server runner handle.
+        """
         runner = web.AppRunner(self.app)
         await runner.setup()
         site = web.TCPSite(runner, host, port)
@@ -73,7 +104,15 @@ class VisualizationServer:
         return runner
 
     async def wait_for_client(self, timeout=None):
-        """Wait for a client to connect to the WebSocket."""
+        """
+        Block until a client connects or a timeout expires.
+
+        Args:
+            timeout (float | None): Optional timeout duration.
+
+        Returns:
+            bool: True if a client connected, False if timed out.
+        """
         try:
             await asyncio.wait_for(self.client_connected.wait(), timeout=timeout)
             print("[WEBSOCKET] Client connection established")
@@ -82,39 +121,41 @@ class VisualizationServer:
             print("[WEBSOCKET] Timeout waiting for client connection")
             return False
 
-    # -------------------------------------------------------------
-    # HIGH-LEVEL MESSAGE HELPERS (CALLED BY MIXIN)
-    # -------------------------------------------------------------
     def initialize_map(self, world_map: Map):
         """
-        Receives the actual Map object from the main world generation and
-        prepares the flat list format for the visualization client.
+        Convert the map grid into a flat list of serializable dicts and
+        cache them for streaming to visualization clients.
+
+        Args:
+            world_map (Map): Simulation world map.
         """
         flat_map = []
-        scale_factor = world_map.columns / 100 
         max_viz_x = min(world_map.columns, 100)
         max_viz_y = min(world_map.rows, 100)
-        
+
         for x in range(max_viz_x):
             for y in range(max_viz_y):
                 cell = world_map.grid[x][y]
-                cell_dict = cell.to_dict()
-                flat_map.append(cell_dict)
-                
+                flat_map.append(cell.to_dict())
+
         self.map_data = flat_map
         self.map_initialized = True
         print(f"Server map data initialized from simulation world: {len(flat_map)} cells.")
 
     async def send_full_map(self, ws):
-        """Send the entire pre-generated map data to a specific client"""
-        # The map data is a list of dictionaries, one for each cell
-        message = {
+        """
+        Send the full map snapshot to a specific WebSocket client.
+
+        Args:
+            ws: WebSocketResponse instance.
+        """
+        await ws.send_json({
             "type": "full_map_init",
             "map_cells": self.map_data
-        }
-        await ws.send_json(message)
+        })
 
     async def send_map_cell_data(self, x, y, terrain, dust_storm=False):
+        """Broadcast a single cell update."""
         await self.broadcast({
             "type": "map_cell_update",
             "cell": {
@@ -127,7 +168,10 @@ class VisualizationServer:
 
     async def send_map_updates(self, map_data):
         """
-        Handles bulk updates of cell properties (like dust_storm status).
+        Broadcast a bulk map update (terrain or dust storm changes).
+
+        Args:
+            map_data (list): Updated cell list.
         """
         self.map_data = map_data
         await self.broadcast({
@@ -136,6 +180,7 @@ class VisualizationServer:
         })
 
     async def send_agent_update(self, agent_id: str, agent_type: str, x: float, y: float, battery: float, status: str, color: Optional[str], radius: int):
+        """Broadcast agent state information to all clients."""
         await self.broadcast({
             "type": "agent_update",
             "agent": {
@@ -151,6 +196,7 @@ class VisualizationServer:
         })
 
     async def send_resource_discovered(self, resource_id: str, x: float, y: float):
+        """Notify clients of a newly discovered resource."""
         await self.broadcast({
             "type": "resource_discovered",
             "resource": {
@@ -161,6 +207,7 @@ class VisualizationServer:
         })
 
     async def send_hazard_detected(self, hazard_id: str, x: float, y: float, radius: float):
+        """Notify clients of a detected hazard."""
         await self.broadcast({
             "type": "hazard_detected",
             "hazard": {
@@ -172,6 +219,7 @@ class VisualizationServer:
         })
 
     async def send_cell_explored(self, x: float, y: float):
+        """Mark a grid cell as explored in visualization."""
         await self.broadcast({
             "type": "cell_explored",
             "x": x,
@@ -179,6 +227,7 @@ class VisualizationServer:
         })
 
     async def send_message(self, sender: str, content: str):
+        """Send a log/communication message to all visualization clients."""
         await self.broadcast({
             "type": "log_message",
             "sender": sender,
@@ -187,58 +236,47 @@ class VisualizationServer:
 
 class VisualizationMixin:
     """
-    Mixin class that adds visualization capabilities to SPADE agents.
-    
-    Usage:
-        class YourAgent(VisualizationMixin, Agent):
-            def __init__(self, jid, password, viz_server):
-                super().__init__(jid, password)
-                self.setup_visualization(viz_server, agent_type='rover')
+    Mixin adding visualization capabilities to SPADE agents.
+
+    Stores tracked attributes (position, battery, status, etc.) and provides
+    helper methods to send structured updates to the visualization server.
     """
-    
-    def setup_visualization(
-        self,
-        viz_server,
-        agent_type: str,
-        agent_jid: str,
-        position: Tuple[float, float],
-        battery: float = 100.0,
-        color: Optional[str] = None,
-        radius: int = 5
-    ):
+    def setup_visualization(self, viz_server, agent_type: str, agent_jid: str, position: Tuple[float, float], battery: float = 100.0, color: Optional[str] = None, radius: int = 5):
         """
-        Setup visualization for this agent
-        
+        Initialize visualization properties for the agent.
+
         Args:
-            viz_server: VisualizationServer instance
-            agent_type: Type of agent ('rover', 'drone', 'satellite', 'base')
-            color: Optional custom color for the agent
+            viz_server (VisualizationServer): The visualization backend.
+            agent_type (str): Category of agent ('rover', 'drone', etc.).
+            agent_jid (str): Agent identifier.
+            position (Tuple[float, float]): Initial coordinates.
+            battery (float): Initial battery level.
+            color (str | None): Custom color.
+            radius (int): Rendering radius.
         """
         self.viz_server = viz_server
-
         self.agent_jid = agent_jid
         self.viz_agent_type = agent_type
         self.viz_color = color
         self.viz_radius = radius
-
         self.viz_position = position
         self.viz_battery = battery
         self.viz_status = "initializing"
-    
+
     async def viz_update_position(self, pos: Tuple[float, float]):
-        """Update agent position in visualization"""
+        """Update agent position in visualization."""
         self.viz_position = (float(pos[0]), float(pos[1]))
-    
+
     async def viz_update_battery(self, battery: float = 100.0):
-        """Update agent battery level"""
+        """Update agent battery level."""
         self.viz_battery = float(battery)
-    
+
     async def viz_update_status(self, status: str):
-        """Update agent status"""
+        """Update agent status string."""
         self.viz_status = status
-    
+
     async def viz_send_update(self):
-        """Send complete agent update to visualization"""
+        """Push the agent's complete state update to the server."""
         if hasattr(self, 'viz_server') and self.viz_server:
             await self.viz_server.send_agent_update(
                 agent_id=self.agent_jid.split("@")[0],
@@ -250,54 +288,42 @@ class VisualizationMixin:
                 color=self.viz_color,
                 radius=self.viz_radius
             )
-    
+
     async def viz_report_resource(self, resource_id: str, x: float, y: float):
-        """Report resource discovery"""
+        """Report a discovered resource to the visualization layer."""
         if hasattr(self, 'viz_server') and self.viz_server:
-            await self.viz_server.send_resource_discovered(
-                resource_id=resource_id,
-                x=float(x),
-                y=float(y)
-            )
+            await self.viz_server.send_resource_discovered(resource_id, float(x), float(y))
             await self.viz_server.send_message(
                 sender=self.agent_jid.split("@")[0],
                 content=f"Discovered {resource_id} at ({x:.1f}, {y:.1f})"
             )
-    
+
     async def viz_report_hazard(self, hazard_id: str, x: float, y: float, radius: float = 5):
-        """Report hazard detection"""
+        """Report a detected hazard at a location."""
         if hasattr(self, 'viz_server') and self.viz_server:
-            await self.viz_server.send_hazard_detected(
-                hazard_id=hazard_id,
-                x=float(x),
-                y=float(y),
-                radius=float(radius)
-            )
+            await self.viz_server.send_hazard_detected(hazard_id, float(x), float(y), float(radius))
             await self.viz_server.send_message(
                 sender=self.agent_jid.split("@")[0],
                 content=f"Hazard detected: {hazard_id} at ({x:.1f}, {y:.1f})"
             )
-    
+
     async def viz_mark_explored(self, x: float, y: float):
-        """Mark a cell as explored"""
+        """Mark a cell as explored visually."""
         if hasattr(self, 'viz_server') and self.viz_server:
             await self.viz_server.send_cell_explored(int(x), int(y))
-    
+
     async def viz_send_message(self, content: str):
-        """Send a message to the communication log"""
+        """Send a log message to visualization."""
         if hasattr(self, 'viz_server') and self.viz_server:
             await self.viz_server.send_message(
                 sender=self.agent_jid.split("@")[0],
                 content=content
             )
 
-# SPADE Agent with Visualization Integration
 class VisualizationBehaviour(CyclicBehaviour):
-    """Behaviour that sends agent state to visualization"""
-    
+    """Behaviour that periodically sends visualization updates."""
+
     async def run(self):
-        # Send agent update to visualization
         if hasattr(self.agent, 'viz_server'):
-            await self.agent.viz_send_update()  # Let mixin handle it!
-        
-        await asyncio.sleep(0.1)  # Update frequency
+            await self.agent.viz_send_update()
+        await asyncio.sleep(0.1)
