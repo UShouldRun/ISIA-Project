@@ -159,7 +159,7 @@ class Rover(VisualizationMixin, Agent):
             rover.calculate_distance(rover.path[i - 1], rover.path[i])
             for i in range(1, len(rover.path))
         )
-        if rover.energy < 1.10 * 2 * distance * ENERGY_PER_DISTANCE_UNIT:
+        if rover.energy < ((2.2 + 0.10 * STORM_CHANCE * STORM_COST) * distance) * ENERGY_PER_DISTANCE_UNIT:
             print(f"{CYAN}[{rover.name}] Low on energy; rejecting mission to {rover.goal}{RESET}")
             rover.status = "idle"
             rover.goal = None
@@ -533,16 +533,17 @@ class Rover(VisualizationMixin, Agent):
 
                     rover.add_behaviour(rover.AnalyzeSoil())
 
-                    self.kill()
                     rover.goal = rover.base_position
-                    rover.status = "returning"
-                    old_path = rover.path.reverse()
+                    old_path = rover.path[::-1]
 
-                    returning_status = await rover.find_path()
-                    if returning_status != "viable":
+                    _ = await rover.find_path()
+                    if not rover.path:
+                        print("Using old path to return to base")
                         rover.path = old_path
                         rover.goal = rover.base_position
 
+                    rover.status = "returning"
+                    self.kill()
                     rover.add_behaviour(rover.MoveAlongPath())
 
                 elif rover.status == "returning":
