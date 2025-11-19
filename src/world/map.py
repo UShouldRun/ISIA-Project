@@ -5,7 +5,7 @@ from math import sqrt
 from typing import Tuple, List, Optional
 
 from .world import WorldObject
-from settings import RED, GREEN, MAGENTA, YELLOW, RESET
+from settings import STORM_COST, RED, GREEN, MAGENTA, YELLOW, RESET
 
 MapPos = Tuple[int, int]
 
@@ -41,13 +41,7 @@ class MapCell:
         Returns:
             float: The cost to traverse this cell. Returns infinity if impassable.
         """
-        if self.cost == float('inf'):
-            return float('inf')
-
-        total_cost = self.cost
-        if self.dust_storm:
-            total_cost += 3
-        return total_cost
+        return self.cost if not self.dust_storm else STORM_COST
 
     def to_dict(self) -> dict:
         """

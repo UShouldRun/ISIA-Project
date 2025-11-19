@@ -196,7 +196,7 @@ async def simulate_hazards(world_map: Map, viz_server: Any, interval: int = 10):
 
     while True:
         try:
-            await asyncio.sleep(interval)
+            await asyncio.sleep(interval // 6)
         except asyncio.CancelledError:
             logging.info("[HAZARD] FAILEEEEEEEEEEEED...")
             await clear_storm(world_map)
@@ -209,7 +209,7 @@ async def simulate_hazards(world_map: Map, viz_server: Any, interval: int = 10):
         if random.random() < STORM_CHANCE: 
             center_x = random.randint(0, world_map.columns - 1)
             center_y = random.randint(0, world_map.rows - 1)
-            radius = random.randint(int(0.05 * world_map.columns), int(0.2 * world_map.columns))
+            radius = random.randint(int(0.15 * world_map.columns), int(0.40 * world_map.columns))
 
             logging.warning(f"[HAZARD] New dust storm forming at ({center_x}, {center_y}) with radius {radius}.")
 
@@ -232,6 +232,8 @@ async def simulate_hazards(world_map: Map, viz_server: Any, interval: int = 10):
             print(f"Any cell with dust? {any(cell['dust_storm'] for cell in flat_map)}")
             await viz_server.send_map_updates(flat_map)
             logging.warning(f"[HAZARD] Map updated.")
+
+            await asyncio.sleep(interval)
         
         else:
             logging.info("[HAZARD] All clear. No new storm detected.")
@@ -388,7 +390,7 @@ async def main():
     print(f"\n[MAIN] All agents started. Running simulation for {duration} seconds...")
     print(f"[MAIN] Summary: {len(bases)} bases, {len(drones)} drones, {len(rovers)} rovers\n")
     
-    hazard_task = asyncio.create_task(simulate_hazards(world_map, viz_server, interval=10))
+    hazard_task = asyncio.create_task(simulate_hazards(world_map, viz_server, interval=60))
 
     # --- RUN SIMULATION ---
     await asyncio.sleep(duration)
