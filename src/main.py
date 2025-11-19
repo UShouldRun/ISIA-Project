@@ -392,7 +392,7 @@ async def main():
     print(f"\n[MAIN] All agents started. Running simulation for {duration} seconds...")
     print(f"[MAIN] Summary: {len(bases)} bases, {len(drones)} drones, {len(rovers)} rovers\n")
     
-    hazard_task = asyncio.create_task(simulate_hazards(world_map, viz_server, interval=60))
+    hazard_task = asyncio.create_task(simulate_hazards(world_map, viz_server, interval=INTERVAL_FOR_STORMS))
 
     # --- RUN SIMULATION ---
     await asyncio.sleep(duration)
